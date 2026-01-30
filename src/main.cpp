@@ -2,6 +2,7 @@
 #include "sssp_algorithm.hpp"
 
 #include <iostream>
+#include <iomanip>
 #include <limits>
 #include <string>
 
@@ -56,12 +57,51 @@ int main(int argc, char** argv) {
         }
 
         std::cout << "Computing shortest distance from " << start << " to " << end << "...\n";
-        Weight distance = compute_shortest_distance(g, start, end);
+        auto path = compute_shortest_path(g, start, end);
 
-        if (distance == std::numeric_limits<Weight>::infinity()) {
+        if (path.empty()) {
             std::cout << "No path exists from " << start << " to " << end << "\n";
         } else {
-            std::cout << "Shortest distance: " << distance << " meters\n";
+            // Calculate total distance
+            Weight total_distance = 0.0;
+            for (size_t i = 1; i < path.size(); ++i) {
+                Vertex u = path[i-1];
+                Vertex v = path[i];
+                for (const auto& edge : g[u]) {
+                    if (edge.to == v) {
+                        total_distance += edge.weight;
+                        break;
+                    }
+                }
+            }
+
+            std::cout << "Shortest distance: " << total_distance << " meters\n";
+            std::cout << "Path (" << path.size() << " vertices):\n";
+            
+            for (size_t i = 0; i < path.size(); ++i) {
+                Vertex v = path[i];
+                std::cout << "  " << i+1 << ". Vertex " << v;
+                if (v < g.coords.size()) {
+                    std::cout << " (lat: " << std::fixed << std::setprecision(6) 
+                              << g.coords[v].first << ", lon: " << g.coords[v].second << ")";
+                }
+                
+                // Show the road taken to next vertex
+                if (i < path.size() - 1) {
+                    Vertex next = path[i+1];
+                    for (const auto& edge : g[v]) {
+                        if (edge.to == next) {
+                            std::cout << "\n     -> " << std::fixed << std::setprecision(2) 
+                                      << edge.weight << "m";
+                            if (!edge.name.empty()) {
+                                std::cout << " via " << edge.name;
+                            }
+                            break;
+                        }
+                    }
+                }
+                std::cout << "\n";
+            }
         }
     } else {
         // All-pairs mode (from vertex 0)
