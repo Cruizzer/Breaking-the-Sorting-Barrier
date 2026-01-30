@@ -26,6 +26,7 @@ find_package(Threads REQUIRED)
 # Your sources
 set(SOURCES
     src/main.cpp
+    src/graph.cpp
     src/sssp_algorithm.cpp
     src/osm_loader.cpp
 )
