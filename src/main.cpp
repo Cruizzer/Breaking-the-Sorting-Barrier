@@ -1,119 +1,179 @@
 #include "graph.hpp"
-#include "sssp_algorithm.hpp"
+#include "graph_generator.hpp"
+#include "algorithms/dijkstra.hpp"
+#include "algorithms/bmssp.hpp"
+#include "benchmark/benchmark.hpp"
 
 #include <iostream>
-#include <iomanip>
-#include <limits>
 #include <string>
+#include <vector>
+
+void print_usage(const char* program_name) {
+    std::cout << "Usage: " << program_name << " --generate TYPE SIZE [OPTIONS]\n";
+    std::cout << "\nGraph Generation:\n";
+    std::cout << "  --generate random N [degree]    Generate random sparse graph\n";
+    std::cout << "                                  N = number of vertices\n";
+    std::cout << "                                  degree = avg edges per vertex (default: 4)\n";
+    std::cout << "  --generate grid R C             Generate R×C grid graph\n";
+    std::cout << "  --generate road N               Generate road-like network\n";
+    std::cout << "\nOptions:\n";
+    std::cout << "  --trials K                      Run K trials with random sources (default: 1)\n";
+    std::cout << "  --report FILE                   Save benchmark report to CSV file\n";
+    std::cout << "\nExamples:\n";
+    std::cout << "  " << program_name << " --generate random 10000 4\n";
+    std::cout << "  " << program_name << " --generate random 100000 6 --trials 5\n";
+    std::cout << "  " << program_name << " --generate grid 100 100 --report results.csv\n";
+}
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " GRAPH_FILE [OPTIONS]\n";
-        std::cerr << "\nOptions:\n";
-        std::cerr << "  --info [N]              Show graph info (first N vertices, default 20)\n";
-        std::cerr << "  --vertex V              Show all edges from vertex V\n";
-        std::cerr << "  --find-pair             Find and test a connected vertex pair\n";
-        std::cerr << "  START END               Compute shortest distance from START to END\n";
-        std::cerr << "  (no options)            Compute SSSP from vertex 0\n";
+    if (argc < 4) {
+        print_usage(argv[0]);
         return 1;
     }
-
-    std::cout << "Loading graph...\n";
-    Graph g = load_osm_graph(argv[1]);
-    std::cout << "Graph loaded with " << g.size() << " vertices\n";
-
-    // Handle special modes
-    if (argc >= 3 && std::string(argv[2]) == "--info") {
-        size_t max_vertices = (argc >= 4) ? std::stoull(argv[3]) : 20;
-        print_graph_info(g, max_vertices);
-        return 0;
+    
+    if (std::string(argv[1]) != "--generate") {
+        std::cerr << "Error: First argument must be --generate\n";
+        print_usage(argv[0]);
+        return 1;
     }
     
-    if (argc >= 4 && std::string(argv[2]) == "--vertex") {
-        Vertex v = std::stoull(argv[3]);
-        print_vertex_edges(g, v);
-        return 0;
-    }
+    // Parse generation parameters
+    std::string type = argv[2];
+    Graph graph;
     
-    if (argc >= 3 && std::string(argv[2]) == "--find-pair") {
-        auto [start, end] = find_connected_pair(g);
-        std::cout << "\nFound connected pair: " << start << " -> " << end << "\n";
-        print_vertex_edges(g, start);
-        std::cout << "\nTesting shortest path...\n";
-        Weight distance = compute_shortest_distance(g, start, end);
-        std::cout << "Distance from " << start << " to " << end << ": " 
-                  << distance << " meters\n";
-        return 0;
-    }
-
-    if (argc >= 4) {
-        // Point-to-point mode
-        Vertex start = std::stoull(argv[2]);
-        Vertex end = std::stoull(argv[3]);
-
-        if (start >= g.size() || end >= g.size()) {
-            std::cerr << "Error: vertex out of range (max: " << g.size()-1 << ")\n";
+    std::cout << "=== Graph Generation ===\n";
+    
+    if (type == "random") {
+        if (argc < 4) {
+            std::cerr << "Error: random requires size parameter\n";
             return 1;
         }
-
-        std::cout << "Computing shortest distance from " << start << " to " << end << "...\n";
-        auto path = compute_shortest_path(g, start, end);
-
-        if (path.empty()) {
-            std::cout << "No path exists from " << start << " to " << end << "\n";
-        } else {
-            // Calculate total distance
-            Weight total_distance = 0.0;
-            for (size_t i = 1; i < path.size(); ++i) {
-                Vertex u = path[i-1];
-                Vertex v = path[i];
-                for (const auto& edge : g[u]) {
-                    if (edge.to == v) {
-                        total_distance += edge.weight;
-                        break;
-                    }
-                }
-            }
-
-            std::cout << "Shortest distance: " << total_distance << " meters\n";
-            std::cout << "Path (" << path.size() << " vertices):\n";
-            
-            for (size_t i = 0; i < path.size(); ++i) {
-                Vertex v = path[i];
-                std::cout << "  " << i+1 << ". Vertex " << v;
-                if (v < g.coords.size()) {
-                    std::cout << " (lat: " << std::fixed << std::setprecision(6) 
-                              << g.coords[v].first << ", lon: " << g.coords[v].second << ")";
-                }
-                
-                // Show the road taken to next vertex
-                if (i < path.size() - 1) {
-                    Vertex next = path[i+1];
-                    for (const auto& edge : g[v]) {
-                        if (edge.to == next) {
-                            std::cout << "\n     -> " << std::fixed << std::setprecision(2) 
-                                      << edge.weight << "m";
-                            if (!edge.name.empty()) {
-                                std::cout << " via " << edge.name;
-                            }
-                            break;
-                        }
-                    }
-                }
-                std::cout << "\n";
-            }
+        size_t n = std::stoull(argv[3]);
+        double avg_degree = (argc >= 5 && std::string(argv[4]).find("--") != 0) 
+                            ? std::stod(argv[4]) : 4.0;
+        
+        std::cout << "Generating random sparse graph...\n";
+        std::cout << "  Vertices: " << n << "\n";
+        std::cout << "  Avg degree: " << avg_degree << "\n";
+        graph = generate_random_graph(n, avg_degree);
+        
+    } else if (type == "grid") {
+        if (argc < 5) {
+            std::cerr << "Error: grid requires rows and cols\n";
+            return 1;
         }
+        size_t rows = std::stoull(argv[3]);
+        size_t cols = std::stoull(argv[4]);
+        
+        std::cout << "Generating grid graph...\n";
+        std::cout << "  Dimensions: " << rows << "×" << cols << "\n";
+        graph = generate_grid_graph(rows, cols);
+        
+    } else if (type == "road") {
+        if (argc < 4) {
+            std::cerr << "Error: road requires size parameter\n";
+            return 1;
+        }
+        size_t n = std::stoull(argv[3]);
+        
+        std::cout << "Generating road-like network...\n";
+        std::cout << "  Vertices: " << n << "\n";
+        graph = generate_road_network(n);
+        
     } else {
-        // All-pairs mode (from vertex 0)
-        std::cout << "Computing SSSP from vertex 0...\n";
-        auto distances = compute_sssp(g, 0);
-
-        std::cout << "First 10 distances:\n";
-        for (size_t i = 0; i < std::min(distances.size(), size_t(10)); ++i) {
-            std::cout << "  dist[" << i << "] = " << distances[i] << "\n";
+        std::cerr << "Error: Unknown graph type '" << type << "'\n";
+        return 1;
+    }
+    
+    std::cout << "✓ Graph generated: " << graph.size() << " vertices\n";
+    
+    // Parse options
+    size_t num_trials = 1;
+    std::string report_file;
+    
+    for (int i = 4; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--trials" && i + 1 < argc) {
+            num_trials = std::stoull(argv[++i]);
+        } else if (arg == "--report" && i + 1 < argc) {
+            report_file = argv[++i];
         }
     }
-
-    std::cout << "Done.\n";
+    
+    // Run benchmarks
+    std::cout << "\n=== Running Benchmarks ===\n";
+    std::cout << "Trials: " << num_trials << "\n";
+    
+    if (num_trials == 1) {
+        // Single trial from vertex 0
+        auto result = benchmark::compare_algorithms(
+            algorithms::dijkstra,
+            algorithms::bmssp,
+            graph,
+            0
+        );
+        
+        benchmark::print_comparison(result);
+        
+        if (!report_file.empty()) {
+            std::vector<benchmark::ComparisonResult> results = {result};
+            benchmark::generate_report(results, report_file);
+        }
+        
+    } else {
+        // Multiple trials
+        std::cout << "\nRunning " << num_trials << " trials from random source vertices...\n";
+        
+        std::vector<benchmark::ComparisonResult> all_results;
+        
+        for (size_t trial = 0; trial < num_trials; ++trial) {
+            Vertex source = (trial * 1234567) % graph.size();  // Pseudo-random source
+            
+            std::cout << "\nTrial " << (trial + 1) << "/" << num_trials 
+                      << " (source: " << source << ")...\n";
+            
+            auto result = benchmark::compare_algorithms(
+                algorithms::dijkstra,
+                algorithms::bmssp,
+                graph,
+                source
+            );
+            
+            all_results.push_back(result);
+            
+            std::cout << "  Dijkstra: " << result.dijkstra_result.execution_time_ms << " ms\n";
+            std::cout << "  BMSSP:    " << result.bmssp_result.execution_time_ms << " ms\n";
+            std::cout << "  Speedup:  " << result.speedup_factor << "x\n";
+        }
+        
+        // Calculate average speedup
+        double avg_speedup = 0.0;
+        double avg_dijkstra_time = 0.0;
+        double avg_bmssp_time = 0.0;
+        
+        for (const auto& r : all_results) {
+            avg_speedup += r.speedup_factor;
+            avg_dijkstra_time += r.dijkstra_result.execution_time_ms;
+            avg_bmssp_time += r.bmssp_result.execution_time_ms;
+        }
+        
+        avg_speedup /= num_trials;
+        avg_dijkstra_time /= num_trials;
+        avg_bmssp_time /= num_trials;
+        
+        std::cout << "\n" << std::string(70, '=') << "\n";
+        std::cout << "AVERAGE RESULTS (" << num_trials << " trials)\n";
+        std::cout << std::string(70, '=') << "\n";
+        std::cout << "Dijkstra: " << avg_dijkstra_time << " ms\n";
+        std::cout << "BMSSP:    " << avg_bmssp_time << " ms\n";
+        std::cout << "Average Speedup: " << avg_speedup << "x\n";
+        std::cout << std::string(70, '=') << "\n";
+        
+        if (!report_file.empty()) {
+            benchmark::generate_report(all_results, report_file);
+        }
+    }
+    
+    std::cout << "\nDone.\n";
     return 0;
 }
