@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(sssp_osm CXX)
+project(breaking_the_sorting_barrier CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,37 +7,25 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Build type
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Debug)
+    set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# Add your include directories
-include_directories(
-    ${PROJECT_SOURCE_DIR}/include       # your graph.hpp etc
-    ${PROJECT_SOURCE_DIR}/external/libosmium/include
-    ${PROJECT_SOURCE_DIR}/include/protozero/include
-)
+# Include directories
+include_directories(${PROJECT_SOURCE_DIR}/include)
 
-# Find system libraries
-find_package(ZLIB REQUIRED)
-find_package(EXPAT REQUIRED)
-find_package(BZip2)   # optional
-find_package(Threads REQUIRED)
-
-# Your sources
+# Source files
 set(SOURCES
     src/main.cpp
-    src/graph.cpp
-    src/sssp_algorithm.cpp
-    src/osm_loader.cpp
+    src/graph_generator.cpp
+    src/algorithms/dijkstra.cpp
+    src/algorithms/bmssp.cpp
+    src/benchmark/benchmark.cpp
 )
 
+# Create executable
 add_executable(sssp ${SOURCES})
 
-# Link libraries
-target_link_libraries(sssp
-    PRIVATE
-        ZLIB::ZLIB
-        EXPAT::EXPAT
-        ${BZIP2_LIBRARIES}   # only if needed
-        Threads::Threads
-)
+# Compiler optimizations for Release mode
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    target_compile_options(sssp PRIVATE -O3 -march=native)
+endif()
