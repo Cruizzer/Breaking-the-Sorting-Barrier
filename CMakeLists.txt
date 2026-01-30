@@ -1,27 +1,42 @@
-cmake_minimum_required(VERSION 3.16)
-project(SSSP)
+cmake_minimum_required(VERSION 3.15)
+project(sssp_osm CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# Options for debug/release builds
-set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
+# Build type
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Debug)
+endif()
 
-# Include directories
-include_directories(include)
+# Add your include directories
+include_directories(
+    ${PROJECT_SOURCE_DIR}/include       # your graph.hpp etc
+    ${PROJECT_SOURCE_DIR}/external/libosmium/include
+    ${PROJECT_SOURCE_DIR}/include/protozero/include
+)
 
-# Source files
+# Find system libraries
+find_package(ZLIB REQUIRED)
+find_package(EXPAT REQUIRED)
+find_package(BZip2)   # optional
+find_package(Threads REQUIRED)
+
+# Your sources
 set(SOURCES
     src/main.cpp
     src/sssp_algorithm.cpp
-    src/graph.cpp
+    src/osm_loader.cpp
 )
 
-# Find libosmium
-find_package(osmium REQUIRED)
-
-# Executable
-add_executable(sssp_debug ${SOURCES})
+add_executable(sssp ${SOURCES})
 
 # Link libraries
-target_link_libraries(sssp_debug ${OSMIUM_LIBRARIES} z)
+target_link_libraries(sssp
+    PRIVATE
+        ZLIB::ZLIB
+        EXPAT::EXPAT
+        ${BZIP2_LIBRARIES}   # only if needed
+        Threads::Threads
+)
