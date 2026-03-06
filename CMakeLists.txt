@@ -38,6 +38,8 @@ set(COMMON_SOURCES
     src/graph_generator.cpp
     src/algorithms/dijkstra.cpp
     src/algorithms/bmssp.cpp
+    src/algorithms/bmssp_expected.cpp
+    src/algorithms/bmssp_wc.cpp
 )
 
 # Main executable

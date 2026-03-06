@@ -14,7 +14,7 @@ void print_usage(const char* program_name) {
     std::cout << "  --generate random N [degree]    Generate random sparse graph\n";
     std::cout << "                                  N = number of vertices\n";
     std::cout << "                                  degree = avg edges per vertex (default: 4)\n";
-    std::cout << "  --generate grid R C             Generate R×C grid graph\n";
+    std::cout << "  --generate grid R C             Generate RxC grid graph\n";
     std::cout << "  --generate road N               Generate road-like network\n";
     std::cout << "\nOptions:\n";
     std::cout << "  --trials K                      Run K trials with random sources (default: 1)\n";
