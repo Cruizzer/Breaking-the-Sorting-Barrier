@@ -40,12 +40,12 @@ set(COMMON_SOURCES
     src/algorithms/bmssp.cpp
     src/algorithms/bmssp_expected.cpp
     src/algorithms/bmssp_wc.cpp
+    src/benchmark/benchmark.cpp
 )
 
 # Main executable
 set(MAIN_SOURCES
     src/main.cpp
-    src/benchmark/benchmark.cpp
 )
 
 add_executable(sssp ${MAIN_SOURCES} ${COMMON_SOURCES})
@@ -81,6 +81,12 @@ target_link_libraries(gbench PRIVATE benchmark::benchmark)
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     target_compile_options(gbench PRIVATE -O3 -march=native)
+endif()
+
+# Scaling benchmark driver
+add_executable(scale_bench src/benchmark/scale_bench.cpp ${COMMON_SOURCES})
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    target_compile_options(scale_bench PRIVATE -O3 -march=native)
 endif()
 
 # ==================== Custom Targets ====================
