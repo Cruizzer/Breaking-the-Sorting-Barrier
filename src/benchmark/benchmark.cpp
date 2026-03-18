@@ -160,15 +160,23 @@ void print_comparison(const ComparisonResult& result) {
     print_result(result.bmssp_result);
     
     std::cout << "\n=== Performance Comparison ===\n";
-    std::cout << "BMSSP Speedup: " << std::fixed << std::setprecision(2) 
+    std::cout << "BMSSP Speedup: " << std::fixed << std::setprecision(2)
               << result.speedup_factor << "x ";
-    
+
     if (result.speedup_factor > 1.0) {
         std::cout << "(FASTER)\n";
-    } else if (result.speedup_factor < 1.0) {
+        std::cout << "BMSSP is " << std::fixed << std::setprecision(2)
+                  << result.speedup_factor << "x faster than Dijkstra\n";
+    } else if (result.speedup_factor < 1.0 && result.speedup_factor > 0.0) {
+        double slower = 1.0 / result.speedup_factor;
         std::cout << "(SLOWER)\n";
-    } else {
+        std::cout << "BMSSP is " << std::fixed << std::setprecision(2)
+                  << slower << "x slower than Dijkstra\n";
+    } else if (result.speedup_factor == 1.0) {
         std::cout << "(SAME)\n";
+    } else {
+        // Handle degenerate case (zero or negative)
+        std::cout << "(UNDEFINED)\n";
     }
     
     std::cout << "Results match: " << (result.results_match ? "YES ✓" : "NO ✗") << "\n";

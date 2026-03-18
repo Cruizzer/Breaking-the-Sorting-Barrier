@@ -1,7 +1,6 @@
 #pragma once
 #include "graph.hpp"
-#include "bmssp_expected.hpp"
-#include "bmssp_wc.hpp"
+#include "bmssp_algo.hpp"
 #include <vector>
 
 namespace algorithms {
