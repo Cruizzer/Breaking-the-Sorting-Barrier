@@ -37,6 +37,7 @@ BenchmarkResult run_benchmark(
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
     result.execution_time_us = duration.count();
     result.execution_time_ms = duration.count() / 1000.0;
+    result.distances = distances;
     
     // Compute statistics
     result.reachable_vertices = 0;
@@ -78,13 +79,13 @@ ComparisonResult compare_algorithms(
     comparison.speedup_factor = comparison.dijkstra_result.execution_time_us / 
                                 comparison.bmssp_result.execution_time_us;
     
-    // Verify correctness - run Dijkstra and BMSSP again to get full results
-    auto dijkstra_distances = dijkstra(graph, source);
-    auto bmssp_distances = bmssp(graph, source);
-    
+    // Verify correctness - use stored distance vectors (avoid rerunning algorithms)
+    const auto& dijkstra_distances = comparison.dijkstra_result.distances;
+    const auto& bmssp_distances = comparison.bmssp_result.distances;
+
     comparison.results_match = true;
     const double epsilon = 1e-6;
-    
+
     for (size_t i = 0; i < dijkstra_distances.size() && i < bmssp_distances.size(); ++i) {
         double diff = std::abs(dijkstra_distances[i] - bmssp_distances[i]);
         if (diff > epsilon && 
@@ -136,19 +137,18 @@ BenchmarkResult run_multiple_trials(
 
 void print_result(const BenchmarkResult& result) {
     std::cout << "\n=== " << result.algorithm_name << " Results ===\n";
-    std::cout << "Graph: " << result.graph_size << " vertices, " 
-              << result.edge_count << " edges (avg degree: " 
-              << std::fixed << std::setprecision(2) << result.avg_degree << ")\n";
-    std::cout << "Source vertex: " << result.source_vertex << "\n";
     std::cout << "Execution time: " << std::fixed << std::setprecision(3) 
               << result.execution_time_ms << " ms (" 
               << result.execution_time_us << " μs)\n";
-    std::cout << "Reachable vertices: " << result.reachable_vertices 
-              << " / " << result.graph_size << "\n";
-    std::cout << "Average distance: " << std::fixed << std::setprecision(2) 
-              << result.avg_distance << "\n";
-    std::cout << "Max distance: " << std::fixed << std::setprecision(2) 
-              << result.max_distance << "\n";
+    std::cout << "Reachable vertices: " << result.reachable_vertices << " / " << result.graph_size << "\n";
+    std::cout << "Average distance: " << std::fixed << std::setprecision(2) << result.avg_distance << "\n";
+    std::cout << "Max distance: " << std::fixed << std::setprecision(2) << result.max_distance << "\n";
+    std::cout << "Final distances: ";
+    for (const auto& d : result.distances) {
+        if (std::isinf(d)) std::cout << "inf ";
+        else std::cout << d << " ";
+    }
+    std::cout << "\n";
 }
 
 void print_comparison(const ComparisonResult& result) {

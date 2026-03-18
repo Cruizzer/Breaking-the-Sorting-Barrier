@@ -21,6 +21,9 @@ struct BenchmarkResult {
     // Timing results (in microseconds)
     double execution_time_us;
     double execution_time_ms;
+
+    // Final distance vector produced by the algorithm
+    std::vector<Weight> distances;
     
     // Correctness metrics
     size_t reachable_vertices;

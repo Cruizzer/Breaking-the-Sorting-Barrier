@@ -114,6 +114,44 @@ int main(int argc, char** argv) {
         );
         
         benchmark::print_comparison(result);
+
+        // If algorithms disagree, print per-vertex distances and reconstructed paths
+        if (!result.results_match) {
+            std::cout << "\n--- Detailed diagnostics (mismatched vertices) ---\n";
+            const auto& dists_dij = result.dijkstra_result.distances;
+            const auto& dists_bm = result.bmssp_result.distances;
+            for (size_t v = 0; v < dists_dij.size(); ++v) {
+                double a = dists_dij[v];
+                double b = dists_bm[v];
+                if (std::isinf(a) && std::isinf(b)) continue;
+                double diff = std::abs(a - b);
+                if (diff > 1e-6) {
+                    std::cout << "Vertex " << v << ": Dijkstra=" << a << " BMSSP=" << b << " diff=" << diff << "\n";
+                    auto path_dij = algorithms::dijkstra_path(graph, 0, v);
+                    auto path_bm = algorithms::bmssp_path(graph, 0, v);
+                    std::cout << "  Dijkstra path: ";
+                    for (auto x : path_dij) std::cout << x << " ";
+                    std::cout << "\n  BMSSP path:    ";
+                    for (auto x : path_bm) std::cout << x << " ";
+                    std::cout << "\n";
+                        // Print adjacency lists for nodes involved in the differing paths
+                        std::vector<Vertex> inspect = {0, v};
+                        inspect.insert(inspect.end(), path_dij.begin(), path_dij.end());
+                        inspect.insert(inspect.end(), path_bm.begin(), path_bm.end());
+                        // unique
+                        std::sort(inspect.begin(), inspect.end());
+                        inspect.erase(std::unique(inspect.begin(), inspect.end()), inspect.end());
+                        for (auto u : inspect) {
+                            std::cout << "  Neighbors of " << u << ": ";
+                            for (const auto& e : graph[u]) {
+                                std::cout << e.to << "(" << e.weight << ") ";
+                            }
+                            std::cout << "\n";
+                        }
+                }
+            }
+            std::cout << "--- end diagnostics ---\n";
+        }
         
         if (!report_file.empty()) {
             std::vector<benchmark::ComparisonResult> results = {result};
