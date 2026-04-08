@@ -1,38 +1,126 @@
 #include "graph_generator.hpp"
 #include <algorithm>
 #include <set>
+#include <unordered_set>
 
-Graph generate_random_graph(size_t n, double avg_degree, double min_weight, double max_weight, unsigned seed) {
-    Graph g;
-    std::mt19937 rng(seed);
-    std::uniform_real_distribution<double> weight_dist(min_weight, max_weight);
+namespace {
+
+void add_vertices_with_random_coords(Graph& g, size_t n, std::mt19937& rng) {
     std::uniform_real_distribution<double> coord_dist(0.0, 100.0);
-    
-    // Create vertices with random coordinates
     for (size_t i = 0; i < n; ++i) {
         g.add_vertex(coord_dist(rng), coord_dist(rng));
     }
-    
-    // Add edges to achieve target average degree
+}
+
+inline size_t edge_key(size_t u, size_t v, size_t n) {
+    if (u > v) std::swap(u, v);
+    return u * n + v;
+}
+
+} // namespace
+
+Graph generate_random_graph(size_t n, double avg_degree, double min_weight, double max_weight, unsigned seed) {
+    return generate_erdos_renyi_graph(n, avg_degree, min_weight, max_weight, seed);
+}
+
+Graph generate_erdos_renyi_graph(size_t n, double avg_degree, double min_weight, double max_weight, unsigned seed) {
+    Graph g;
+    if (n == 0) return g;
+
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<double> weight_dist(min_weight, max_weight);
+
+    add_vertices_with_random_coords(g, n, rng);
+
+    // G(n, m): choose m unique undirected edges
     size_t target_edges = static_cast<size_t>(n * avg_degree / 2.0);
     std::uniform_int_distribution<size_t> vertex_dist(0, n - 1);
-    std::set<std::pair<size_t, size_t>> existing_edges;
-    
-    for (size_t i = 0; i < target_edges; ++i) {
+    std::unordered_set<size_t> existing_edges;
+    existing_edges.reserve(target_edges * 2 + 1);
+
+    size_t added = 0;
+    size_t attempts = 0;
+    const size_t max_attempts = std::max<size_t>(target_edges * 20, 1000);
+
+    while (added < target_edges && attempts < max_attempts) {
+        attempts++;
         size_t u = vertex_dist(rng);
         size_t v = vertex_dist(rng);
-        
-        if (u == v) continue; // No self-loops
-        if (u > v) std::swap(u, v); // Normalize edge representation
-        
-        if (existing_edges.count({u, v})) continue; // No duplicate edges
-        existing_edges.insert({u, v});
-        
+
+        if (u == v) continue;
+
+        size_t key = edge_key(u, v, n);
+        if (existing_edges.count(key)) continue;
+        existing_edges.insert(key);
+
         double w = weight_dist(rng);
         g[u].push_back({v, w, ""});
-        g[v].push_back({u, w, ""}); // Undirected
+        g[v].push_back({u, w, ""});
+        added++;
     }
-    
+
+    return g;
+}
+
+Graph generate_barabasi_albert_graph(size_t n, size_t m_attach, double min_weight, double max_weight, unsigned seed) {
+    Graph g;
+    if (n == 0) return g;
+
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<double> weight_dist(min_weight, max_weight);
+    add_vertices_with_random_coords(g, n, rng);
+
+    if (n == 1) return g;
+
+    m_attach = std::max<size_t>(1, std::min(m_attach, n - 1));
+    const size_t m0 = std::min(n, std::max<size_t>(m_attach + 1, 2));
+
+    std::vector<size_t> degree(n, 0);
+    std::vector<size_t> repeated_nodes;
+    repeated_nodes.reserve(n * m_attach * 2);
+
+    // Initial clique on m0 vertices
+    for (size_t u = 0; u < m0; ++u) {
+        for (size_t v = u + 1; v < m0; ++v) {
+            double w = weight_dist(rng);
+            g[u].push_back({v, w, ""});
+            g[v].push_back({u, w, ""});
+            degree[u]++;
+            degree[v]++;
+            repeated_nodes.push_back(u);
+            repeated_nodes.push_back(v);
+        }
+    }
+
+    for (size_t v = m0; v < n; ++v) {
+        std::unordered_set<size_t> chosen;
+        chosen.reserve(m_attach * 2);
+
+        while (chosen.size() < m_attach) {
+            size_t u;
+            if (!repeated_nodes.empty()) {
+                std::uniform_int_distribution<size_t> pick(0, repeated_nodes.size() - 1);
+                u = repeated_nodes[pick(rng)];
+            } else {
+                std::uniform_int_distribution<size_t> uniform_pick(0, v - 1);
+                u = uniform_pick(rng);
+            }
+            if (u == v) continue;
+            chosen.insert(u);
+        }
+
+        for (size_t u : chosen) {
+            double w = weight_dist(rng);
+            g[v].push_back({u, w, ""});
+            g[u].push_back({v, w, ""});
+
+            degree[v]++;
+            degree[u]++;
+            repeated_nodes.push_back(v);
+            repeated_nodes.push_back(u);
+        }
+    }
+
     return g;
 }
 

@@ -139,7 +139,7 @@ void print_result(const BenchmarkResult& result) {
     std::cout << "\n=== " << result.algorithm_name << " Results ===\n";
     std::cout << "Execution time: " << std::fixed << std::setprecision(3) 
               << result.execution_time_ms << " ms (" 
-              << result.execution_time_us << " μs)\n";
+              << result.execution_time_us << " microseconds)\n";
     std::cout << "Reachable vertices: " << result.reachable_vertices << " / " << result.graph_size << "\n";
     std::cout << "Average distance: " << std::fixed << std::setprecision(2) << result.avg_distance << "\n";
     std::cout << "Max distance: " << std::fixed << std::setprecision(2) << result.max_distance << "\n";
@@ -179,7 +179,7 @@ void print_comparison(const ComparisonResult& result) {
         std::cout << "(UNDEFINED)\n";
     }
     
-    std::cout << "Results match: " << (result.results_match ? "YES ✓" : "NO ✗") << "\n";
+    std::cout << "Results match: " << (result.results_match ? "YES" : "NO") << "\n";
     
     if (!result.results_match) {
         std::cout << "WARNING: Algorithms produced different results!\n";

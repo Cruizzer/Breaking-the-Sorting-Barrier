@@ -11,16 +11,19 @@
 void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " --generate TYPE SIZE [OPTIONS]\n";
     std::cout << "\nGraph Generation:\n";
-    std::cout << "  --generate random N [degree]    Generate random sparse graph\n";
-    std::cout << "                                  N = number of vertices\n";
-    std::cout << "                                  degree = avg edges per vertex (default: 4)\n";
+    std::cout << "  --generate random N [degree]    Generate Erdos-Renyi G(n,m) sparse graph (alias)\n";
+    std::cout << "  --generate er N [degree]        Generate Erdos-Renyi G(n,m) sparse graph\n";
+    std::cout << "                                  N = number of vertices, degree = avg degree (default: 4)\n";
+    std::cout << "  --generate ba N [m]             Generate Barabasi-Albert graph\n";
+    std::cout << "                                  N = number of vertices, m = edges/new vertex (default: 2)\n";
     std::cout << "  --generate grid R C             Generate RxC grid graph\n";
     std::cout << "  --generate road N               Generate road-like network\n";
     std::cout << "\nOptions:\n";
     std::cout << "  --trials K                      Run K trials with random sources (default: 1)\n";
     std::cout << "  --report FILE                   Save benchmark report to CSV file\n";
     std::cout << "\nExamples:\n";
-    std::cout << "  " << program_name << " --generate random 10000 4\n";
+    std::cout << "  " << program_name << " --generate er 10000 4\n";
+    std::cout << "  " << program_name << " --generate ba 10000 3\n";
     std::cout << "  " << program_name << " --generate random 100000 6 --trials 5\n";
     std::cout << "  " << program_name << " --generate grid 100 100 --report results.csv\n";
 }
@@ -43,7 +46,7 @@ int main(int argc, char** argv) {
     
     std::cout << "=== Graph Generation ===\n";
     
-    if (type == "random") {
+    if (type == "random" || type == "er") {
         if (argc < 4) {
             std::cerr << "Error: random requires size parameter\n";
             return 1;
@@ -52,10 +55,24 @@ int main(int argc, char** argv) {
         double avg_degree = (argc >= 5 && std::string(argv[4]).find("--") != 0) 
                             ? std::stod(argv[4]) : 4.0;
         
-        std::cout << "Generating random sparse graph...\n";
+        std::cout << "Generating Erdos-Renyi G(n,m) graph...\n";
         std::cout << "  Vertices: " << n << "\n";
         std::cout << "  Avg degree: " << avg_degree << "\n";
-        graph = generate_random_graph(n, avg_degree);
+        graph = generate_erdos_renyi_graph(n, avg_degree);
+
+    } else if (type == "ba") {
+        if (argc < 4) {
+            std::cerr << "Error: ba requires size parameter\n";
+            return 1;
+        }
+        size_t n = std::stoull(argv[3]);
+        size_t m_attach = (argc >= 5 && std::string(argv[4]).find("--") != 0)
+                          ? std::stoull(argv[4]) : 2;
+
+        std::cout << "Generating Barabasi-Albert graph...\n";
+        std::cout << "  Vertices: " << n << "\n";
+        std::cout << "  Edges per new vertex (m): " << m_attach << "\n";
+        graph = generate_barabasi_albert_graph(n, m_attach);
         
     } else if (type == "grid") {
         if (argc < 5) {

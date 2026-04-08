@@ -14,9 +14,9 @@ int main(int argc, char** argv) {
     size_t trials = 3;
 
     std::ofstream out("scale_results.csv");
-    out << "graph_type,size,degree,trials,dijkstra_ms,bmssp_ms,speedup,reachable,avg_distance,max_distance\n";
+    out << "graph_type,size,param,trials,dijkstra_ms,bmssp_ms,speedup,reachable,avg_distance,max_distance\n";
 
-    auto run_one = [&](const std::string& type, size_t N, int deg){
+    auto run_one = [&](const std::string& type, size_t N, int param){
         double total_d_ms = 0.0;
         double total_b_ms = 0.0;
         double total_speedup = 0.0;
@@ -27,7 +27,12 @@ int main(int argc, char** argv) {
         for (size_t t = 0; t < trials; ++t) {
             Graph g;
             if (type == "random") {
-                g = generate_random_graph(N, deg);
+                g = generate_erdos_renyi_graph(N, param);
+            } else if (type == "erdos_renyi") {
+                g = generate_erdos_renyi_graph(N, param);
+            } else if (type == "barabasi_albert") {
+                size_t m_attach = static_cast<size_t>(std::max(1, param));
+                g = generate_barabasi_albert_graph(N, m_attach);
             } else if (type == "grid") {
                 size_t side = std::max<size_t>(1, (size_t)std::sqrt((double)N));
                 g = generate_grid_graph(side, side);
@@ -59,16 +64,23 @@ int main(int argc, char** argv) {
         double avg_dist = total_avgdist / trials;
         double avg_max = total_maxdist / trials;
 
-        out << type << "," << N << "," << deg << "," << trials << ","
+        out << type << "," << N << "," << param << "," << trials << ","
             << avg_d << "," << avg_b << "," << avg_speed << ","
             << avg_reachable << "," << avg_dist << "," << avg_max << "\n";
 
-        std::cout << "Completed: " << type << " N=" << N << " deg=" << deg << " -> d=" << avg_d << " ms, b=" << avg_b << " ms\n";
+        std::cout << "Completed: " << type << " N=" << N << " param=" << param
+                  << " -> d=" << avg_d << " ms, b=" << avg_b << " ms\n";
     };
 
     // Random graphs
     for (auto N : sizes) {
         for (int deg : degrees) run_one("random", N, deg);
+    }
+
+    // Barabasi-Albert graphs
+    std::vector<int> ba_params = {2, 4};
+    for (auto N : sizes) {
+        for (int m_attach : ba_params) run_one("barabasi_albert", N, m_attach);
     }
 
     // Grid graphs (use N as approximately nodes, degree param ignored)
