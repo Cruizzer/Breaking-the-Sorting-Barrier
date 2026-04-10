@@ -48,9 +48,12 @@
 //
 // Selection algorithm
 // -------------------
-// Pull() uses the median-of-ninthers selection routine from
-// `external/median_of_ninthers.h` (Alexandrescu 2017) to find the M-th
-// smallest element in O(M) worst-case time, as required by the paper.
+// Pull(), split_d1_block(), and batch_prepend_list() all need to find the
+// k-th smallest element in a list of entries.  This is done via
+// std::nth_element, which provides O(n) average-case time.  The paper
+// (Duan et al. 2025) requires a worst-case O(n) selection algorithm; if
+// worst-case guarantees matter, std::nth_element can be replaced with a
+// deterministic median-of-medians implementation.
 // =============================================================================
 
 #ifndef BATCH_PQ_HPP
@@ -179,8 +182,7 @@ public:
     int size() const { return num_entries_; }
 
     // ── Insert ────────────────────────────────────────────────────────────────
-    // Insert (vertex, label).  If vertex already has a better or equal label
-    // the call is a no-op.  Amortised O(log(N/M)) time.
+    // Insert (vertex, label).  If vertex already has a better or equal label\n    // the call is a no-op.  Amortised O(log(N/M)) time.
     void insert(int vertex, PathLabel label) {
         PathLabel* existing = best_label_.find(vertex);
 
@@ -190,14 +192,13 @@ public:
         }
 
         // Find the first D1 block whose UB strictly exceeds label.
-        auto it_ub = ub_set_.lower_bound({ label, sentinel_ });
-        if (it_ub == ub_set_.end()) {
-            // Defensive fallback: labels are expected to be < current upper
-            // bound, but if numerical edge-cases violate that, append into the
-            // last known D1 block instead of dereferencing end().
-            it_ub = std::prev(ub_set_.end());
+        // When multiple blocks have the same UB, any of them works; lower_bound
+        // with (label, sentinel_) consistently picks one.
+        BlockIter target_block = sentinel_;  // default fallback
+        auto it_ub = ub_set_.upper_bound({ label, sentinel_ });
+        if (it_ub != ub_set_.end()) {
+            target_block = it_ub->second;
         }
-        BlockIter target_block = it_ub->second;
 
         EntryIter pos = target_block->insert(target_block->end(), { vertex, label });
         loc_in_D1_.set(vertex, { target_block, pos });
@@ -258,21 +259,6 @@ public:
             }
         }
 
-        // Guard against an empty batch (can happen when many labels equal the
-        // separator). BMSSP recursion requires a non-empty source set whenever
-        // the queue is non-empty.
-        if (result.empty() && !candidates.empty()) {
-            int best_idx = 0;
-            for (int i = 1; i < (int)candidates.size(); ++i) {
-                if (candidates[i].label < candidates[best_idx].label) {
-                    best_idx = i;
-                }
-            }
-            result.push_back(candidates[best_idx].vertex);
-            remove_from_structure(candidates[best_idx].vertex,
-                                  candidates[best_idx].label);
-        }
-
         return { separator, result };
     }
 
@@ -286,14 +272,6 @@ public:
     }
 
 private:
-
-    // Find the UB-set entry corresponding to a specific D1 block.
-    UBSet::iterator find_ub_entry_by_block(BlockIter blk) {
-        for (auto it = ub_set_.begin(); it != ub_set_.end(); ++it) {
-            if (it->second == blk) return it;
-        }
-        return ub_set_.end();
-    }
 
     // ── Block sequences ───────────────────────────────────────────────────────
     BlockList D0_;         // blocks from batch_prepend
@@ -312,6 +290,9 @@ private:
 
     // ── remove_from_structure ─────────────────────────────────────────────────
     // Remove a specific (vertex, label) entry, cleaning up empty blocks.
+    // stored_label must be the label that was current when the entry was added
+    // to the structure — it is used to locate the block's UB-set entry via
+    // lower_bound, which is O(log(N/M)).
     void remove_from_structure(int vertex, PathLabel stored_label) {
         Location* loc1 = loc_in_D1_.find(vertex);
         if (loc1 != nullptr) {
@@ -321,8 +302,9 @@ private:
 
             if (blk->empty()) {
                 // Remove the block's entry from the UB set, unless it's the sentinel.
-                auto it_ub = find_ub_entry_by_block(blk);
                 if (blk != sentinel_) {
+                    auto it_ub = ub_set_.lower_bound({ stored_label, sentinel_ });
+                    while (it_ub != ub_set_.end() && it_ub->second != blk) ++it_ub;
                     if (it_ub != ub_set_.end()) ub_set_.erase(it_ub);
                     D1_.erase(blk);
                 }
@@ -382,14 +364,16 @@ private:
             median.length, median.hop_count,
             median.destination, median.predecessor - 1);
 
-        auto it_ub = find_ub_entry_by_block(blk);
-        if (it_ub == ub_set_.end()) {
-            // Defensive: should never happen; keep structure valid.
-            ub_set_.insert({ upper_bound_, new_blk });
-            return;
+        // The block's current UB entry in ub_set_ has a value >= old_block_ub
+        // (it was set when the block was created or last split).  Search forward
+        // from old_block_ub to find the exact entry for this block.
+        auto it_ub = ub_set_.lower_bound({ old_block_ub, sentinel_ });
+        while (it_ub != ub_set_.end() && it_ub->second != blk) ++it_ub;
+        PathLabel inherited_ub = upper_bound_;
+        if (it_ub != ub_set_.end()) {
+            inherited_ub = it_ub->first;
+            ub_set_.erase(it_ub);
         }
-        PathLabel inherited_ub = it_ub->first;
-        ub_set_.erase(it_ub);
 
         ub_set_.insert({ old_block_ub, blk    });
         ub_set_.insert({ inherited_ub, new_blk });

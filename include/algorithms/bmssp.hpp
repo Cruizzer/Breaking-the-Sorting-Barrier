@@ -173,17 +173,18 @@ private:
 
     int real_predecessor_of(int v) const;
     std::pair<std::vector<double>, std::vector<int>> build_output() const;
-    std::pair<std::vector<double>, std::vector<int>> build_output_const() const;
 };
 
 } // namespace duan25
 
-// Wrapper function declarations for compatibility with algorithms namespace
-// (Implementations are in bmssp_duan25.cpp)
-#include "graph.hpp"
+// Forward declarations for wrapper functions
+struct Graph;           // Forward declaration (defined in graph.hpp)
+using Vertex = unsigned long;
+using Weight = double;
 
 namespace algorithms {
 
+// Wrapper functions to integrate with algorithms namespace
 std::vector<Weight> bmssp(const Graph& graph, Vertex source);
 Weight bmssp_single_target(const Graph& graph, Vertex source, Vertex target);
 std::vector<Vertex> bmssp_path(const Graph& graph, Vertex source, Vertex target);

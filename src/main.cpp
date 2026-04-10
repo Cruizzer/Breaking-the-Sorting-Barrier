@@ -171,7 +171,8 @@ int main(int argc, char** argv) {
         }
         
         if (!report_file.empty()) {
-            std::vector<benchmark::ComparisonResult> results = {result};
+            std::vector<benchmark::ComparisonResult> results;
+            results.push_back(result);
             benchmark::generate_report(results, report_file);
         }
         

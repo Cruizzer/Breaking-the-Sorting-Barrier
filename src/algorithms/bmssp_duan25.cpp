@@ -58,8 +58,9 @@ std::pair<std::vector<double>, std::vector<int>> Solver::execute(int source) {
 
 std::vector<int> Solver::reconstruct_path(int target,
                                           const std::vector<int>& real_pred) const {
-    auto [dist_out, _] = build_output_const();
-    if (dist_out[target] >= infinite_label().length) return {};
+    // Check reachability against the internal distance for the target's proxy node.
+    int internal_target = real_to_internal_[target];
+    if (dist_estimate_[internal_target] >= INF) return {};
 
     if (!cd_transform_applied_) {
         // Predecessor array is directly in real-vertex space.
@@ -333,7 +334,13 @@ Solver::bmssp_rec(int level, PathLabel B, const std::vector<int>& S) {
 
     auto [P, W] = find_pivots(B, S);
 
-    int batch_size = 1 << ((level - 1) * t_);
+    int n = (int)working_adj_.size();
+    // 2^{(l-1)t} is the block capacity for this level's BatchPQ.  We clamp to
+    // n because the structure never holds more than n entries, and the shift
+    // would overflow int for large levels.
+    int batch_size = (((level - 1) * t_) < 30)
+                     ? std::min(1 << ((level - 1) * t_), n)
+                     : n;
     BatchPQ& D = level_pqs_[level - 1];
     D.initialise(batch_size, B);
 
@@ -345,7 +352,10 @@ Solver::bmssp_rec(int level, PathLabel B, const std::vector<int>& S) {
             last_inner_bound = label_of(p);
 
     std::vector<int> complete;
-    long long quota = (long long)k_ * (1LL << (level * t_));
+    // quota = k * 2^{lt}, clamped to n to avoid overflow.
+    long long quota = (long long)k_ * (((level * t_) < 30)
+                       ? std::min(1LL << (level * t_), (long long)n)
+                       : (long long)n);
     complete.reserve((int)quota + (int)W.size());
 
     while ((long long)complete.size() < quota && D.size() > 0) {
@@ -412,10 +422,6 @@ int Solver::real_predecessor_of(int v) const {
 }
 
 std::pair<std::vector<double>, std::vector<int>> Solver::build_output() const {
-    return build_output_const();
-}
-
-std::pair<std::vector<double>, std::vector<int>> Solver::build_output_const() const {
     if (!cd_transform_applied_) {
         return { dist_estimate_, predecessor_ };
     }
