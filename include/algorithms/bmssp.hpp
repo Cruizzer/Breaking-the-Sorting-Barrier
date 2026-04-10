@@ -1,7 +1,186 @@
-#pragma once
-#include "graph.hpp"
-#include "bmssp_algo.hpp"
+// bmssp.hpp
+// =============================================================================
+// Single-source shortest paths via the Bounded Multi-Source Shortest Path
+// algorithm of Duan, Mao, Mao, Shu and Yin (2025).
+//
+// Reference
+// ---------
+//   Ran Duan, Jiayi Mao, Xiao Mao, Xinkai Shu, Longhui Yin.
+//   "Breaking the Sorting Barrier for Directed Single-Source Shortest Paths."
+//   STOC 2025.  https://arxiv.org/pdf/2504.17033
+//
+//   Implementation notes from:
+//   Castro, Clementino, de Freitas (2025).
+//   https://arxiv.org/pdf/2511.03007
+//
+// Time complexity:  O(m log^{2/3} n)  on a constant-degree graph.
+// Space complexity: O(n log^{1/3} n)
+//
+// Overview
+// --------
+// The algorithm solves a more general problem than SSSP: the Bounded
+// Multi-Source Shortest Path (BMSSP) problem.  Given
+//   - a set of source vertices S (all with current distance estimates),
+//   - an upper bound B,
+// BMSSP finds every vertex v reachable from S with d(v) < B, settles it
+// (i.e. makes its estimate exact), and returns a boundary B' <= B such that
+// all vertices with d(v) < B' are guaranteed complete.
+//
+// Three subroutines (directly corresponding to the three algorithms in the
+// paper) are implemented here as private member functions:
+//
+//   find_pivots  — Algorithm 1: k rounds of Bellman-Ford to shrink the
+//                  source set S down to a small "pivot" set P.
+//
+//   base_case    — Algorithm 2: plain Dijkstra, stops after settling k+1
+//                  vertices; used at recursion level 0.
+//
+//   bmssp_rec    — Algorithm 3: the main recursive BMSSP procedure.
+//
+// Graph requirements
+// ------------------
+// The paper requires the input graph to have constant in- and out-degree.
+// Call prepare_graph(true) to apply the classical constant-degree
+// transformation (described in Section 2 of the paper) before running
+// execute().  If your graph already has bounded degree, use
+// prepare_graph(false) (the default).
+//
+// Usage
+// -----
+//   Solver solver(num_vertices);
+//   solver.add_edge(u, v, weight);
+//   ...
+//   solver.prepare_graph();
+//   auto [dist, pred] = solver.execute(source);
+//   auto path = solver.reconstruct_path(target, pred);
+// =============================================================================
+
+#ifndef BMSSP_HPP
+#define BMSSP_HPP
+
+#include <cmath>
+#include <limits>
+#include <map>
+#include <queue>
 #include <vector>
+#include <algorithm>
+#include <cassert>
+#include <numeric>
+
+#include "path_label.hpp"
+#include "batch_pq.hpp"
+
+namespace duan25 {
+
+// Edge in the adjacency list.
+struct Edge {
+    int    to;
+    double weight;
+};
+
+using AdjList = std::vector<std::vector<Edge>>;
+
+// =============================================================================
+class Solver {
+public:
+
+    // Construct a solver for a graph with `n` vertices (0-indexed).
+    explicit Solver(int n);
+
+    // Construct directly from an existing adjacency list.
+    explicit Solver(const AdjList& adj);
+
+    // Add a directed edge from `u` to `v` with non-negative weight `w`.
+    void add_edge(int u, int v, double w);
+
+    // Must be called once before execute().
+    // If `apply_cd_transform` is true, applies the constant-degree
+    // transformation from Section 2 of the paper.  Pass false if the graph
+    // already has constant in/out-degree.
+    void prepare_graph(bool apply_cd_transform = false);
+
+    // Run SSSP from `source` (a real vertex id, 0-indexed).
+    // Returns (distance_vector, predecessor_vector), both indexed by real
+    // vertex id.  Unreachable vertices have distance INF.
+    std::pair<std::vector<double>, std::vector<int>> execute(int source);
+
+    // Given the predecessor array returned by execute(), reconstruct the
+    // shortest path from the source to `target` as a sequence of real vertex ids.
+    // Returns {} if target is unreachable.
+    std::vector<int> reconstruct_path(int target,
+                                      const std::vector<int>& real_pred) const;
+
+private:
+
+    // ── Data members ──────────────────────────────────────────────────────────
+
+    int      num_real_vertices_;
+    bool     cd_transform_applied_ = false;
+
+    AdjList  input_adj_;    // adjacency list as supplied by the caller
+    AdjList  working_adj_;  // adjacency list actually used by the algorithm
+
+    // Node id maps.  After the CD transform the number of internal nodes may
+    // exceed num_real_vertices_, so both directions are stored explicitly.
+    std::vector<int> real_to_internal_;   // real vertex id  -> internal id
+    std::vector<int> internal_to_real_;   // internal id     -> real vertex id
+
+    // SSSP state (indexed by internal node id).
+    std::vector<double> dist_estimate_;   // db[v] in the paper
+    std::vector<int>    hop_count_;       // number of hops on current best path
+    std::vector<int>    predecessor_;     // Pred[v] in the paper
+
+    // Algorithm parameters (derived from working graph size).
+    int k_;   // k = floor( log^{1/3}(n) )
+    int t_;   // t = floor( log^{2/3}(n) )
+
+    // One BatchPQ per recursion level (shared across sequential recursive calls
+    // at the same level to avoid repeated allocation — see Castro et al. §4).
+    std::vector<BatchPQ> level_pqs_;
+
+    // ── FindPivots state (Algorithm 1) ────────────────────────────────────────
+    std::vector<int>   pivot_root_;       // root[v]: root of v's BFS tree
+    std::vector<int>   tree_size_;        // number of vertices in each root's tree
+    std::vector<int>   visit_stamp_;      // generation counter per vertex
+    int                pivot_call_id_ = 0; // incremented each FindPivots call
+
+    // settled_level_[v] = the recursion level at which v was last settled.
+    std::vector<int>   settled_level_;
+
+    // ── Infinity constant ─────────────────────────────────────────────────────
+    const double INF = std::numeric_limits<double>::max() / 10.0;
+
+    // ── Private methods  ────────────────────────────────────────────────────────
+    
+    void remove_parallel_edges();
+    void build_identity_node_map();
+    void apply_constant_degree_transform();
+    void allocate_algorithm_state();
+    void reset_state();
+
+    PathLabel label_of(int v) const;
+    PathLabel relaxed_label(int u, int v, double w) const;
+    void relax(int u, int v, double w);
+
+    std::pair<std::vector<int>, std::vector<int>>
+    find_pivots(PathLabel B, const std::vector<int>& S);
+
+    std::pair<PathLabel, std::vector<int>>
+    base_case(PathLabel B, int x);
+
+    std::pair<PathLabel, std::vector<int>>
+    bmssp_rec(int level, PathLabel B, const std::vector<int>& S);
+
+    int real_predecessor_of(int v) const;
+    std::pair<std::vector<double>, std::vector<int>> build_output() const;
+    std::pair<std::vector<double>, std::vector<int>> build_output_const() const;
+};
+
+} // namespace duan25
+
+// Wrapper function declarations for compatibility with algorithms namespace
+// (Implementations are in bmssp_duan25.cpp)
+#include "graph.hpp"
 
 namespace algorithms {
 
@@ -10,3 +189,5 @@ Weight bmssp_single_target(const Graph& graph, Vertex source, Vertex target);
 std::vector<Vertex> bmssp_path(const Graph& graph, Vertex source, Vertex target);
 
 } // namespace algorithms
+
+#endif // BMSSP_HPP
