@@ -37,8 +37,7 @@ FetchContent_MakeAvailable(benchmark)
 set(COMMON_SOURCES
     src/graph_generator.cpp
     src/algorithms/dijkstra.cpp
-    src/algorithms/bmssp.cpp
-    src/algorithms/bmssp_algo.cpp
+    src/algorithms/bmssp_duan25.cpp
     src/benchmark/benchmark.cpp
 )
 
