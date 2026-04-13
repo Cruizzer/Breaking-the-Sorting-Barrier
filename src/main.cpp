@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
         size_t cols = std::stoull(argv[4]);
         
         std::cout << "Generating grid graph...\n";
-        std::cout << "  Dimensions: " << rows << "×" << cols << "\n";
+        std::cout << "  Dimensions: " << rows << "x" << cols << "\n";
         graph = generate_grid_graph(rows, cols);
         
     } else if (type == "road") {

@@ -31,6 +31,30 @@ BENCHMARK(BM_Dijkstra_Random_Small)
     ->Args({10000, 8})
     ->Complexity();
 
+static void BM_Dijkstra_Fibonacci_Random_Small(benchmark::State& state) {
+    int n = state.range(0);
+    int avg_degree = state.range(1);
+
+    Graph g = generate_random_graph(n, avg_degree);
+
+    for (auto _ : state) {
+        auto dist = algorithms::dijkstra_fibonacci(g, 0);
+        benchmark::DoNotOptimize(dist);
+    }
+
+    state.SetComplexityN(n);
+    state.counters["vertices"] = n;
+    state.counters["avg_degree"] = avg_degree;
+}
+BENCHMARK(BM_Dijkstra_Fibonacci_Random_Small)
+    ->Args({1000, 4})
+    ->Args({5000, 4})
+    ->Args({10000, 4})
+    ->Args({1000, 8})
+    ->Args({5000, 8})
+    ->Args({10000, 8})
+    ->Complexity();
+
 static void BM_BMSSP_Random_Small(benchmark::State& state) {
     int n = state.range(0);
     int avg_degree = state.range(1);
@@ -70,6 +94,25 @@ static void BM_Dijkstra_Random_Large(benchmark::State& state) {
     state.SetComplexityN(n);
 }
 BENCHMARK(BM_Dijkstra_Random_Large)
+    ->Arg(50000)
+    ->Arg(100000)
+    ->Arg(200000)
+    ->Complexity();
+
+static void BM_Dijkstra_Fibonacci_Random_Large(benchmark::State& state) {
+    int n = state.range(0);
+    int avg_degree = 4;
+
+    Graph g = generate_random_graph(n, avg_degree);
+
+    for (auto _ : state) {
+        auto dist = algorithms::dijkstra_fibonacci(g, 0);
+        benchmark::DoNotOptimize(dist);
+    }
+
+    state.SetComplexityN(n);
+}
+BENCHMARK(BM_Dijkstra_Fibonacci_Random_Large)
     ->Arg(50000)
     ->Arg(100000)
     ->Arg(200000)
@@ -116,6 +159,26 @@ BENCHMARK(BM_Dijkstra_Grid)
     ->Arg(316)  // ~100K vertices
     ->Complexity();
 
+static void BM_Dijkstra_Fibonacci_Grid(benchmark::State& state) {
+    int side = state.range(0);
+
+    Graph g = generate_grid_graph(side, side);
+
+    for (auto _ : state) {
+        auto dist = algorithms::dijkstra_fibonacci(g, 0);
+        benchmark::DoNotOptimize(dist);
+    }
+
+    state.SetComplexityN(side * side);
+    state.counters["grid_size"] = side;
+}
+BENCHMARK(BM_Dijkstra_Fibonacci_Grid)
+    ->Arg(50)
+    ->Arg(100)
+    ->Arg(200)
+    ->Arg(316)
+    ->Complexity();
+
 static void BM_BMSSP_Grid(benchmark::State& state) {
     int side = state.range(0);
     
@@ -152,6 +215,25 @@ static void BM_Dijkstra_SingleTarget(benchmark::State& state) {
     state.SetComplexityN(n);
 }
 BENCHMARK(BM_Dijkstra_SingleTarget)
+    ->Arg(10000)
+    ->Arg(50000)
+    ->Arg(100000)
+    ->Complexity();
+
+static void BM_Dijkstra_Fibonacci_SingleTarget(benchmark::State& state) {
+    int n = state.range(0);
+
+    Graph g = generate_random_graph(n, 4);
+    int target = n - 1;
+
+    for (auto _ : state) {
+        auto dist = algorithms::dijkstra_fibonacci_single_target(g, 0, target);
+        benchmark::DoNotOptimize(dist);
+    }
+
+    state.SetComplexityN(n);
+}
+BENCHMARK(BM_Dijkstra_Fibonacci_SingleTarget)
     ->Arg(10000)
     ->Arg(50000)
     ->Arg(100000)
@@ -197,6 +279,25 @@ BENCHMARK(BM_Dijkstra_Path)
     ->Arg(100000)
     ->Complexity();
 
+static void BM_Dijkstra_Fibonacci_Path(benchmark::State& state) {
+    int n = state.range(0);
+
+    Graph g = generate_random_graph(n, 4);
+    int target = n - 1;
+
+    for (auto _ : state) {
+        auto result = algorithms::dijkstra_fibonacci_path(g, 0, target);
+        benchmark::DoNotOptimize(result);
+    }
+
+    state.SetComplexityN(n);
+}
+BENCHMARK(BM_Dijkstra_Fibonacci_Path)
+    ->Arg(10000)
+    ->Arg(50000)
+    ->Arg(100000)
+    ->Complexity();
+
 static void BM_BMSSP_Path(benchmark::State& state) {
     int n = state.range(0);
     
@@ -234,6 +335,22 @@ static void BM_Dijkstra_VaryingDensity(benchmark::State& state) {
 BENCHMARK(BM_Dijkstra_VaryingDensity)
     ->DenseRange(2, 16, 2);  // degrees: 2, 4, 6, 8, 10, 12, 14, 16
 
+static void BM_Dijkstra_Fibonacci_VaryingDensity(benchmark::State& state) {
+    int n = 10000;
+    int avg_degree = state.range(0);
+
+    Graph g = generate_random_graph(n, avg_degree);
+
+    for (auto _ : state) {
+        auto dist = algorithms::dijkstra_fibonacci(g, 0);
+        benchmark::DoNotOptimize(dist);
+    }
+
+    state.counters["avg_degree"] = avg_degree;
+}
+BENCHMARK(BM_Dijkstra_Fibonacci_VaryingDensity)
+    ->DenseRange(2, 16, 2);
+
 static void BM_BMSSP_VaryingDensity(benchmark::State& state) {
     int n = 10000;
     int avg_degree = state.range(0);
@@ -265,6 +382,24 @@ static void BM_Dijkstra_RoadNetwork(benchmark::State& state) {
     state.SetComplexityN(n);
 }
 BENCHMARK(BM_Dijkstra_RoadNetwork)
+    ->Arg(10000)
+    ->Arg(50000)
+    ->Arg(100000)
+    ->Complexity();
+
+static void BM_Dijkstra_Fibonacci_RoadNetwork(benchmark::State& state) {
+    int n = state.range(0);
+
+    Graph g = generate_road_network(n);
+
+    for (auto _ : state) {
+        auto dist = algorithms::dijkstra_fibonacci(g, 0);
+        benchmark::DoNotOptimize(dist);
+    }
+
+    state.SetComplexityN(n);
+}
+BENCHMARK(BM_Dijkstra_Fibonacci_RoadNetwork)
     ->Arg(10000)
     ->Arg(50000)
     ->Arg(100000)

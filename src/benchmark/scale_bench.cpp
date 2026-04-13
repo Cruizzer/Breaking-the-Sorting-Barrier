@@ -14,12 +14,14 @@ int main(int argc, char** argv) {
     size_t trials = 3;
 
     std::ofstream out("scale_results.csv");
-    out << "graph_type,size,param,trials,dijkstra_ms,bmssp_ms,speedup,reachable,avg_distance,max_distance\n";
+    out << "graph_type,size,param,trials,dijkstra_ms,dijkstra_fib_ms,bmssp_ms,bmssp_vs_binary_speedup,bmssp_vs_fib_speedup,reachable,avg_distance,max_distance\n";
 
     auto run_one = [&](const std::string& type, size_t N, int param){
         double total_d_ms = 0.0;
+        double total_fib_ms = 0.0;
         double total_b_ms = 0.0;
-        double total_speedup = 0.0;
+        double total_speedup_binary = 0.0;
+        double total_speedup_fib = 0.0;
         size_t total_reachable = 0;
         double total_avgdist = 0.0;
         double total_maxdist = 0.0;
@@ -49,27 +51,41 @@ int main(int argc, char** argv) {
                 source
             );
 
+            auto fib = benchmark::run_benchmark(
+                "DijkstraFib",
+                algorithms::dijkstra_fibonacci,
+                g,
+                source
+            );
+
             total_d_ms += comp.dijkstra_result.execution_time_ms;
+            total_fib_ms += fib.execution_time_ms;
             total_b_ms += comp.bmssp_result.execution_time_ms;
-            total_speedup += comp.speedup_factor;
+            total_speedup_binary += comp.speedup_factor;
+            if (comp.bmssp_result.execution_time_us > 0.0) {
+                total_speedup_fib += fib.execution_time_us / comp.bmssp_result.execution_time_us;
+            }
             total_reachable += comp.dijkstra_result.reachable_vertices;
             total_avgdist += comp.dijkstra_result.avg_distance;
             total_maxdist += comp.dijkstra_result.max_distance;
         }
 
         double avg_d = total_d_ms / trials;
+        double avg_fib = total_fib_ms / trials;
         double avg_b = total_b_ms / trials;
-        double avg_speed = total_speedup / trials;
+        double avg_speed_binary = total_speedup_binary / trials;
+        double avg_speed_fib = total_speedup_fib / trials;
         double avg_reachable = static_cast<double>(total_reachable) / trials;
         double avg_dist = total_avgdist / trials;
         double avg_max = total_maxdist / trials;
 
         out << type << "," << N << "," << param << "," << trials << ","
-            << avg_d << "," << avg_b << "," << avg_speed << ","
+            << avg_d << "," << avg_fib << "," << avg_b << ","
+            << avg_speed_binary << "," << avg_speed_fib << ","
             << avg_reachable << "," << avg_dist << "," << avg_max << "\n";
 
         std::cout << "Completed: " << type << " N=" << N << " param=" << param
-                  << " -> d=" << avg_d << " ms, b=" << avg_b << " ms\n";
+                  << " -> d=" << avg_d << " ms, fib=" << avg_fib << " ms, b=" << avg_b << " ms\n";
     };
 
     // Random graphs
