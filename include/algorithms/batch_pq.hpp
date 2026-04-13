@@ -1,432 +1,279 @@
-// batch_pq.hpp
-// =============================================================================
-// Block-based data structure satisfying Lemma 3.3 of Duan et al. (2025).
-//
-// What Lemma 3.3 requires
-// -----------------------
-// Given at most N key/value pairs (keys are vertex indices, values are
-// PathLabels), an integer block-capacity parameter M, and an upper bound B on
-// all values, the structure must support:
-//
-//   Insert(key, value)
-//     Insert or update a key/value pair.  If the key already exists keep the
-//     smaller value.  Amortised O(max{1, log(N/M)}) time.
-//
-//   BatchPrepend(list L)
-//     Insert all pairs in L, each of whose values is *smaller* than every
-//     value currently in the structure.  If L contains duplicate keys keep
-//     the smallest.  Amortised O(|L| · max{1, log(|L|/M)}) time.
-//
-//   Pull()
-//     Remove and return a subset S' of at most M keys associated with the
-//     smallest |S'| values, together with a separating upper bound x such
-//     that max(S') < x <= min(remainder).  If the structure is empty, x = B.
-//     Amortised O(|S'|) time.
-//
-// Data layout
-// -----------
-// Elements are stored in two sequences of doubly-linked blocks:
-//
-//   D0  — blocks produced by BatchPrepend (prepended elements)
-//   D1  — blocks produced by Insert       (individually inserted elements)
-//
-// Each block is a linked list holding at most M entries.  Blocks within each
-// sequence are ordered so that all values in block i are <= all values in
-// block i+1.  A std::set (red-black tree) called `upper_bound_set` maintains
-// one (upper_bound, block_iterator) entry per D1 block, so Insert can locate
-// the correct target block in O(log(|D1|)) = O(log(N/M)) time.
-//
-// Per-key bookkeeping
-// -------------------
-// Two location tables (one for D0, one for D1) record, for each vertex key,
-// which block it sits in and where inside that block.  This makes Delete O(1).
-// A third table `best_label` stores the best PathLabel seen for each key, so
-// duplicate insertions can be detected without scanning blocks.
-//
-// All three tables are DirectAddressTables and support O(1) clear, so the
-// whole structure can be re-initialised for a new recursive call in O(1).
-//
-// Selection algorithm
-// -------------------
-// Pull(), split_d1_block(), and batch_prepend_list() all need to find the
-// k-th smallest element in a list of entries.  This is done via
-// std::nth_element, which provides O(n) average-case time.  The paper
-// (Duan et al. 2025) requires a worst-case O(n) selection algorithm; if
-// worst-case guarantees matter, std::nth_element can be replaced with a
-// deterministic median-of-medians implementation.
-// =============================================================================
-
 #ifndef BATCH_PQ_HPP
 #define BATCH_PQ_HPP
 
+#include <algorithm>
 #include <list>
 #include <set>
-#include <vector>
+#include <unordered_map>
 #include <utility>
-#include <cassert>
-#include <functional>
-#include <algorithm>
+#include <vector>
 
 #include "path_label.hpp"
 
 namespace duan25 {
 
-// An entry stored inside a block: the vertex id and its current best label.
 struct Entry {
-    int       vertex;
+    int vertex;
     PathLabel label;
 };
 
-// ── Iterator types ────────────────────────────────────────────────────────────
-
-using Block       = std::list<Entry>;
-using BlockList   = std::list<Block>;
-using BlockIter   = BlockList::iterator;
-using EntryIter   = Block::iterator;
-
-// Per-key location record: which block and which position inside it.
-struct Location {
-    BlockIter block;
-    EntryIter entry;
-};
-
-// ── Upper-bound set comparator ────────────────────────────────────────────────
-// The set stores (upper_bound_label, block_iterator) pairs ordered by label
-// first, then by block address to break ties between blocks with equal bounds.
-struct UBComparator {
-    bool operator()(const std::pair<PathLabel, BlockIter>& a,
-                    const std::pair<PathLabel, BlockIter>& b) const {
-        if (a.first != b.first) return a.first < b.first;
-        return &(*a.second) < &(*b.second);
-    }
-};
-
-using UBSet = std::set<std::pair<PathLabel, BlockIter>, UBComparator>;
-
-// ── Location tables ───────────────────────────────────────────────────────────
-// We need O(1) lookup of where each vertex lives in D0 / D1.  std::unordered_map
-// would give expected-O(1) but the paper specifies worst-case O(1) via DATs.
-// We wrap the location in a plain vector and use a generation-counter to clear.
-struct LocationTable {
-    std::vector<Location>  locs;
-    std::vector<int>       gen;
-    int                    cur_gen;
-
-    explicit LocationTable(int n) : locs(n), gen(n, 0), cur_gen(1) {}
-
-    Location* find(int v) {
-        if (gen[v] != cur_gen) return nullptr;
-        return &locs[v];
-    }
-    void set(int v, Location loc) {
-        gen[v]  = cur_gen;
-        locs[v] = loc;
-    }
-    void erase(int v) { gen[v] = cur_gen - 1; }
-    void clear()      { cur_gen++; }
-};
-
-// ── Best-label table ──────────────────────────────────────────────────────────
-struct BestLabelTable {
-    std::vector<PathLabel> labels;
-    std::vector<int>       gen;
-    int                    cur_gen;
-
-    explicit BestLabelTable(int n) : labels(n), gen(n, 0), cur_gen(1) {}
-
-    PathLabel* find(int v) {
-        if (gen[v] != cur_gen) return nullptr;
-        return &labels[v];
-    }
-    void set(int v, PathLabel lbl) {
-        gen[v]     = cur_gen;
-        labels[v]  = lbl;
-    }
-    void erase(int v) { gen[v] = cur_gen - 1; }
-    void clear()      { cur_gen++; }
-};
-
-// =============================================================================
 class BatchPQ {
+    using Label = PathLabel;
+    using Element = std::pair<int, Label>;
+    using Block = std::list<Element>;
+    using Blocks = std::list<Block>;
+    using BlockIter = Blocks::iterator;
+    using ElemIter = Block::iterator;
+
+    struct CompareUB {
+        bool operator()(const std::pair<Label, BlockIter>& a,
+                        const std::pair<Label, BlockIter>& b) const {
+            if (a.first != b.first) return a.first < b.first;
+            return std::addressof(*a.second) < std::addressof(*b.second);
+        }
+    };
+
+    BlockIter it_min;
+    Blocks D0, D1;
+    std::set<std::pair<Label, BlockIter>, CompareUB> UBs;
+
+    int M = 0;
+    int size_ = 0;
+    Label B;
+
+    std::unordered_map<int, Label> actual_value;
+    std::unordered_map<int, std::pair<BlockIter, ElemIter>> where_is0, where_is1;
+
 public:
-    explicit BatchPQ(int num_vertices)
-        : loc_in_D0_(num_vertices)
-        , loc_in_D1_(num_vertices)
-        , best_label_(num_vertices)
-        , block_capacity_(0)
-        , num_entries_(0)
-    {}
-
-    // ── Initialise / reset ────────────────────────────────────────────────────
-    // Must be called at the start of each BMSSP recursive call.
-    // M is the block capacity (= 2^{(l-1)t}); B is the current upper bound.
-    void initialise(int M, PathLabel B) {
-        block_capacity_ = M;
-        upper_bound_    = B;
-        num_entries_    = 0;
-
-        D0_.clear();
-        D1_.clear();
-
-        // D1 starts with one empty sentinel block whose upper bound is B.
-        D1_.push_back(Block());
-        sentinel_ = D1_.begin();
-        ub_set_.clear();
-        ub_set_.insert({ B, sentinel_ });
-
-        best_label_.clear();
-        loc_in_D0_.clear();
-        loc_in_D1_.clear();
+    explicit BatchPQ(int n) {
+        actual_value.reserve(n);
+        where_is0.reserve(n);
+        where_is1.reserve(n);
     }
 
-    int size() const { return num_entries_; }
+    void initialise(int M_, Label B_) {
+        M = M_;
+        B = B_;
+        D0 = {};
+        D1 = {Block()};
+        UBs = {std::make_pair(B_, D1.begin())};
+        size_ = 0;
+        actual_value.clear();
+        where_is0.clear();
+        where_is1.clear();
+    }
 
-    // ── Insert ────────────────────────────────────────────────────────────────
-    // Insert (vertex, label).  If vertex already has a better or equal label\n    // the call is a no-op.  Amortised O(log(N/M)) time.
-    void insert(int vertex, PathLabel label) {
-        PathLabel* existing = best_label_.find(vertex);
+    int size() const {
+        return size_;
+    }
 
-        if (existing != nullptr) {
-            if (*existing <= label) return;          // already at least as good
-            remove_from_structure(vertex, *existing); // replace with better one
+    void insert(int vertex, Label label) {
+        int a = vertex;
+        Label b = label;
+
+        auto it_exist = actual_value.find(a);
+        int exist = (it_exist != actual_value.end());
+
+        if (exist && it_exist->second > b) {
+            delete_(b);
+        } else if (exist) {
+            return;
         }
 
-        // Find the first D1 block whose UB strictly exceeds label.
-        // When multiple blocks have the same UB, any of them works; lower_bound
-        // with (label, sentinel_) consistently picks one.
-        BlockIter target_block = sentinel_;  // default fallback
-        auto it_ub = ub_set_.upper_bound({ label, sentinel_ });
-        if (it_ub != ub_set_.end()) {
-            target_block = it_ub->second;
-        }
+        auto it_UB_block = UBs.lower_bound({b, it_min});
+        auto [ub, it_block] = (*it_UB_block);
 
-        EntryIter pos = target_block->insert(target_block->end(), { vertex, label });
-        loc_in_D1_.set(vertex, { target_block, pos });
-        best_label_.set(vertex, label);
-        num_entries_++;
+        auto it = it_block->insert(it_block->end(), {a, b});
+        where_is1[a] = {it_block, it};
+        actual_value[a] = b;
 
-        if ((int)target_block->size() > block_capacity_) {
-            split_d1_block(target_block);
+        size_++;
+
+        if ((int)(*it_block).size() > M) {
+            split(it_block);
         }
     }
 
-    // ── BatchPrepend ──────────────────────────────────────────────────────────
-    // Insert all entries in `entries`, each of whose labels is assumed to be
-    // smaller than anything currently in the structure.
-    // Amortised O(|entries| · max{1, log(|entries|/M)}) time.
     void batch_prepend(const std::vector<Entry>& entries) {
-        batch_prepend_list(entries.begin(), entries.end(),
-                           (int)entries.size());
+        std::vector<Label> labels;
+        labels.reserve(entries.size());
+        for (const auto& e : entries) labels.push_back(e.label);
+        batchPrepend(labels);
     }
 
-    // ── Pull ──────────────────────────────────────────────────────────────────
-    // Extract at most M entries with the smallest labels.
-    // Returns { separating_label, list_of_vertex_ids }.
-    // Time: O(M) amortised.
-    std::pair<PathLabel, std::vector<int>> pull() {
-        // Collect candidates from the fronts of D0 and D1.
-        std::vector<Entry> candidates;
-        candidates.reserve(2 * block_capacity_ + 2);
+    std::pair<Label, std::vector<int>> pull() {
+        std::vector<Element> s0, s1;
+        s0.reserve(2 * M);
+        s1.reserve(M);
 
-        for (auto it = D0_.begin();
-             it != D0_.end() && (int)candidates.size() <= block_capacity_; ++it)
-            for (const Entry& e : *it) candidates.push_back(e);
-
-        for (auto it = D1_.begin();
-             it != D1_.end() && (int)candidates.size() <= block_capacity_; ++it)
-            for (const Entry& e : *it) candidates.push_back(e);
-
-        if ((int)candidates.size() <= block_capacity_) {
-            // Everything fits — return all of them.
-            std::vector<int> result;
-            result.reserve(candidates.size());
-            for (const Entry& e : candidates) {
-                result.push_back(e.vertex);
-                remove_from_structure(e.vertex, e.label);
-            }
-            return { upper_bound_, result };
+        auto it_block = D0.begin();
+        while (it_block != D0.end() && (int)s0.size() <= M) {
+            for (const auto& x : *it_block) s0.push_back(x);
+            ++it_block;
         }
 
-        // Use selection to find the M-th smallest label.
-        PathLabel separator = select_kth(candidates, block_capacity_);
-
-        std::vector<int> result;
-        result.reserve(block_capacity_);
-        for (const Entry& e : candidates) {
-            if (e.label < separator) {
-                result.push_back(e.vertex);
-                remove_from_structure(e.vertex, e.label);
-            }
+        it_block = D1.begin();
+        while (it_block != D1.end() && (int)s1.size() <= M) {
+            for (const auto& x : *it_block) s1.push_back(x);
+            ++it_block;
         }
 
-        return { separator, result };
+        if ((int)(s1.size() + s0.size()) <= M) {
+            std::vector<int> ret;
+            ret.reserve(s1.size() + s0.size());
+            for (auto [a, b] : s0) {
+                ret.push_back(a);
+                delete_(b);
+            }
+            for (auto [a, b] : s1) {
+                ret.push_back(a);
+                delete_(b);
+            }
+            return {B, ret};
+        }
+
+        auto& l = s0;
+        l.insert(l.end(), s1.begin(), s1.end());
+
+        Label med = selectKth(l, M);
+        std::vector<int> ret;
+        ret.reserve(M);
+        for (auto [a, b] : l) {
+            if (b < med) {
+                ret.push_back(a);
+                delete_(b);
+            }
+        }
+        return {med, ret};
     }
 
-    // ── Erase ─────────────────────────────────────────────────────────────────
-    // Remove vertex from the structure if present.  O(1).
-    void erase(int vertex) {
-        PathLabel* lbl = best_label_.find(vertex);
-        if (lbl != nullptr) {
-            remove_from_structure(vertex, *lbl);
+    void erase(int key) {
+        if (actual_value.find(key) != actual_value.end()) {
+            delete_(Label{-1, -1, key, -1});
         }
     }
 
 private:
+    void delete_(Label x) {
+        int a = x.destination;
+        Label b = actual_value[a];
 
-    // ── Block sequences ───────────────────────────────────────────────────────
-    BlockList D0_;         // blocks from batch_prepend
-    BlockList D1_;         // blocks from insert
-    UBSet     ub_set_;     // upper bounds for each D1 block
-    BlockIter sentinel_;   // the initial sentinel block in D1
+        auto it_w = where_is1.find(a);
+        if (it_w != where_is1.end()) {
+            auto [it_block, it] = it_w->second;
+            (*it_block).erase(it);
+            where_is1.erase(a);
 
-    int       block_capacity_;
-    int       num_entries_;
-    PathLabel upper_bound_;
-
-    // ── Per-key tables ────────────────────────────────────────────────────────
-    LocationTable  loc_in_D0_;
-    LocationTable  loc_in_D1_;
-    BestLabelTable best_label_;
-
-    // ── remove_from_structure ─────────────────────────────────────────────────
-    // Remove a specific (vertex, label) entry, cleaning up empty blocks.
-    // stored_label must be the label that was current when the entry was added
-    // to the structure — it is used to locate the block's UB-set entry via
-    // lower_bound, which is O(log(N/M)).
-    void remove_from_structure(int vertex, PathLabel stored_label) {
-        Location* loc1 = loc_in_D1_.find(vertex);
-        if (loc1 != nullptr) {
-            BlockIter blk = loc1->block;
-            blk->erase(loc1->entry);
-            loc_in_D1_.erase(vertex);
-
-            if (blk->empty()) {
-                // Remove the block's entry from the UB set, unless it's the sentinel.
-                if (blk != sentinel_) {
-                    auto it_ub = ub_set_.lower_bound({ stored_label, sentinel_ });
-                    while (it_ub != ub_set_.end() && it_ub->second != blk) ++it_ub;
-                    if (it_ub != ub_set_.end()) ub_set_.erase(it_ub);
-                    D1_.erase(blk);
+            if ((int)(*it_block).size() == 0) {
+                auto it_UB_block = UBs.lower_bound({b, it_block});
+                if ((*it_UB_block).first != B) {
+                    UBs.erase(it_UB_block);
+                    D1.erase(it_block);
                 }
             }
         } else {
-            Location* loc0 = loc_in_D0_.find(vertex);
-            if (loc0 == nullptr) return;  // already absent
-            loc0->block->erase(loc0->entry);
-            loc_in_D0_.erase(vertex);
-            if (loc0->block->empty()) D0_.erase(loc0->block);
+            auto [it_block, it] = where_is0[a];
+            (*it_block).erase(it);
+            where_is0.erase(a);
+            if ((int)(*it_block).size() == 0) D0.erase(it_block);
         }
 
-        best_label_.erase(vertex);
-        num_entries_--;
+        actual_value.erase(a);
+        size_--;
     }
 
-    // ── select_kth ────────────────────────────────────────────────────────────
-    // Rearranges `entries` so that entries[k] is the k-th smallest by label,
-    // using the median-of-ninthers algorithm (worst-case O(n) selection).
-    PathLabel select_kth(std::vector<Entry>& entries, int k) {
-        auto cmp = [](const Entry& a, const Entry& b) {
-            return a.label < b.label;
+    Label selectKth(std::vector<Element>& v, int k) {
+        const auto comparator = [](const auto& a, const auto& b) {
+            return a.second < b.second;
         };
-        std::nth_element(entries.begin(), entries.begin() + k, entries.end(), cmp);
-        return entries[k].label;
+        std::nth_element(v.begin(), v.begin() + k, v.end(), comparator);
+        return v[k].second;
     }
 
-    // ── split_d1_block ────────────────────────────────────────────────────────
-    // Split a D1 block that has exceeded `block_capacity_`.
-    // Elements with label >= median go into a new block inserted after the
-    // current one.  The UB set is updated accordingly.
-    // Time: O(M) for the scan + O(log(N/M)) for the UB set update.
-    void split_d1_block(BlockIter blk) {
-        int sz = (int)blk->size();
-        std::vector<Entry> tmp(blk->begin(), blk->end());
-        PathLabel median = select_kth(tmp, sz / 2);
+    void split(BlockIter it_block) {
+        int sz = (int)(*it_block).size();
 
-        // Insert a new block immediately after `blk`.
-        BlockIter new_blk = D1_.insert(std::next(blk), Block());
+        std::vector<Element> v((*it_block).begin(), (*it_block).end());
+        Label med = selectKth(v, sz / 2);
 
-        EntryIter it = blk->begin();
-        while (it != blk->end()) {
-            if (it->label >= median) {
-                new_blk->push_back(*it);
-                EntryIter new_pos = std::prev(new_blk->end());
-                loc_in_D1_.set(it->vertex, { new_blk, new_pos });
-                it = blk->erase(it);
+        auto pos = it_block;
+        ++pos;
+        auto new_block = D1.insert(pos, Block());
+        auto it = (*it_block).begin();
+
+        while (it != (*it_block).end()) {
+            if ((*it).second >= med) {
+                (*new_block).push_back(std::move(*it));
+                auto it_new = (*new_block).end();
+                --it_new;
+                where_is1[(*it).first] = {new_block, it_new};
+                it = (*it_block).erase(it);
             } else {
                 ++it;
             }
         }
 
-        // The old block now covers labels strictly below `median`.
-        // Construct a label "just below" median by decrementing the predecessor
-        // tiebreaker — the last field in the lexicographic order.
-        PathLabel old_block_ub(
-            median.length, median.hop_count,
-            median.destination, median.predecessor - 1);
+        Label UB1 = {med.length, med.hop_count, med.destination, med.predecessor - 1};
+        auto it_lb = UBs.lower_bound({UB1, it_min});
+        auto [UB2, aux] = (*it_lb);
 
-        // The block's current UB entry in ub_set_ has a value >= old_block_ub
-        // (it was set when the block was created or last split).  Search forward
-        // from old_block_ub to find the exact entry for this block.
-        auto it_ub = ub_set_.lower_bound({ old_block_ub, sentinel_ });
-        while (it_ub != ub_set_.end() && it_ub->second != blk) ++it_ub;
-        PathLabel inherited_ub = upper_bound_;
-        if (it_ub != ub_set_.end()) {
-            inherited_ub = it_ub->first;
-            ub_set_.erase(it_ub);
-        }
-
-        ub_set_.insert({ old_block_ub, blk    });
-        ub_set_.insert({ inherited_ub, new_blk });
+        UBs.insert({UB1, it_block});
+        UBs.insert({UB2, new_block});
+        UBs.erase(it_lb);
     }
 
-    // ── batch_prepend_list ────────────────────────────────────────────────────
-    // Recursive helper: split the input range around its median and recurse
-    // until each half fits in a single D0 block.
-    // This matches the BatchPrepend analysis in Lemma 3.3.
-    template<typename Iter>
-    void batch_prepend_list(Iter begin, Iter end, int count) {
-        if (count == 0) return;
+    void batchPrepend(const std::vector<Label>& labels) {
+        std::list<Element> l;
+        for (const auto& x : labels) {
+            l.push_back({x.destination, x});
+        }
+        batchPrepend(l);
+    }
 
-        if (count <= block_capacity_) {
-            // Small enough: insert as a single new D0 block at the front.
-            D0_.push_front(Block());
-            BlockIter new_blk = D0_.begin();
+    void batchPrepend(const std::list<Element>& l) {
+        int sz = (int)l.size();
+        if (sz == 0) return;
 
-            for (Iter it = begin; it != end; ++it) {
-                int       v   = it->vertex;
-                PathLabel lbl = it->label;
+        if (sz <= M) {
+            D0.push_front(Block());
+            auto new_block = D0.begin();
 
-                PathLabel* existing = best_label_.find(v);
-                if (existing != nullptr) {
-                    if (*existing <= lbl) continue;      // existing is better
-                    remove_from_structure(v, *existing); // replace
+            for (const auto& x : l) {
+                auto it = actual_value.find(x.first);
+                int exist = (it != actual_value.end());
+
+                if (exist && it->second > x.second) {
+                    delete_(x.second);
+                } else if (exist) {
+                    continue;
                 }
 
-                new_blk->push_back({ v, lbl });
-                EntryIter pos = std::prev(new_blk->end());
-                loc_in_D0_.set(v, { new_blk, pos });
-                best_label_.set(v, lbl);
-                num_entries_++;
+                (*new_block).push_back(x);
+                auto it_new = (*new_block).end();
+                --it_new;
+                where_is0[x.first] = {new_block, it_new};
+                actual_value[x.first] = x.second;
+                size_++;
             }
-            if (new_blk->empty()) D0_.erase(new_blk);
+            if (new_block->size() == 0) D0.erase(new_block);
             return;
         }
 
-        // Too large: split at median and recurse.
-        std::vector<Entry> tmp(begin, end);
-        PathLabel median = select_kth(tmp, count / 2);
+        std::vector<Element> v(l.begin(), l.end());
+        Label med = selectKth(v, sz / 2);
 
-        std::vector<Entry> smaller, larger;
-        for (Iter it = begin; it != end; ++it) {
-            if      (it->label < median) smaller.push_back(*it);
-            else if (it->label > median) larger.push_back(*it);
+        std::list<Element> less, great;
+        for (auto [a, b] : l) {
+            if (b < med) {
+                less.push_back({a, b});
+            } else if (b > med) {
+                great.push_back({a, b});
+            }
         }
-        // Include the median element itself in the larger half.
-        larger.push_back({ tmp[count / 2].vertex, median });
+        great.push_back({med.destination, med});
 
-        // Recurse: larger first so smaller ends up at the front of D0.
-        batch_prepend_list(larger.begin(),  larger.end(),  (int)larger.size());
-        batch_prepend_list(smaller.begin(), smaller.end(), (int)smaller.size());
+        batchPrepend(great);
+        batchPrepend(less);
     }
 };
 

@@ -334,13 +334,7 @@ Solver::bmssp_rec(int level, PathLabel B, const std::vector<int>& S) {
 
     auto [P, W] = find_pivots(B, S);
 
-    int n = (int)working_adj_.size();
-    // 2^{(l-1)t} is the block capacity for this level's BatchPQ.  We clamp to
-    // n because the structure never holds more than n entries, and the shift
-    // would overflow int for large levels.
-    int batch_size = (((level - 1) * t_) < 30)
-                     ? std::min(1 << ((level - 1) * t_), n)
-                     : n;
+    const long long batch_size = (1ll << ((level - 1) * t_));
     BatchPQ& D = level_pqs_[level - 1];
     D.initialise(batch_size, B);
 
@@ -352,10 +346,7 @@ Solver::bmssp_rec(int level, PathLabel B, const std::vector<int>& S) {
             last_inner_bound = label_of(p);
 
     std::vector<int> complete;
-    // quota = k * 2^{lt}, clamped to n to avoid overflow.
-    long long quota = (long long)k_ * (((level * t_) < 30)
-                       ? std::min(1LL << (level * t_), (long long)n)
-                       : (long long)n);
+    const long long quota = k_ * (1ll << (level * t_));
     complete.reserve((int)quota + (int)W.size());
 
     while ((long long)complete.size() < quota && D.size() > 0) {
