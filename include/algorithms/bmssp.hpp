@@ -109,38 +109,38 @@ private:
 
     // ── Data members ──────────────────────────────────────────────────────────
 
-    int      num_real_vertices_;
-    bool     cd_transform_applied_ = false;
+    int      num_real_vertices;
+    bool     cd_transform_applied = false;
 
-    AdjList  input_adj_;    // adjacency list as supplied by the caller
-    AdjList  working_adj_;  // adjacency list actually used by the algorithm
+    AdjList  input_adj;    // adjacency list as supplied by the caller
+    AdjList  working_adj;  // adjacency list actually used by the algorithm
 
     // Node id maps.  After the CD transform the number of internal nodes may
-    // exceed num_real_vertices_, so both directions are stored explicitly.
-    std::vector<int> real_to_internal_;   // real vertex id  -> internal id
-    std::vector<int> internal_to_real_;   // internal id     -> real vertex id
+    // exceed num_real_vertices, so both directions are stored explicitly.
+    std::vector<int> real_to_internal;   // real vertex id  -> internal id
+    std::vector<int> internal_to_real;   // internal id     -> real vertex id
 
     // SSSP state (indexed by internal node id).
-    std::vector<double> dist_estimate_;   // db[v] in the paper
-    std::vector<int>    hop_count_;       // number of hops on current best path
-    std::vector<int>    predecessor_;     // Pred[v] in the paper
+    std::vector<double> dist_estimate;   // db[v] in the paper
+    std::vector<int>    hop_count;       // number of hops on current best path
+    std::vector<int>    predecessor;     // Pred[v] in the paper
 
     // Algorithm parameters (derived from working graph size).
-    int k_;   // k = floor( log^{1/3}(n) )
-    int t_;   // t = floor( log^{2/3}(n) )
+    int k;   // k = floor( log^{1/3}(n) )
+    int t;   // t = floor( log^{2/3}(n) )
 
     // One BatchPQ per recursion level (shared across sequential recursive calls
     // at the same level to avoid repeated allocations).
-    std::vector<BatchPQ> level_pqs_;
+    std::vector<BatchPQ> level_pqs;
 
     // ── FindPivots state (Algorithm 1) ────────────────────────────────────────
-    std::vector<int>   pivot_root_;       // root[v]: root of v's BFS tree
-    std::vector<int>   tree_size_;        // number of vertices in each root's tree
-    std::vector<int>   visit_stamp_;      // generation counter per vertex
-    int                pivot_call_id_ = 0; // incremented each FindPivots call
+    std::vector<int>   pivot_root;       // root[v]: root of v's BFS tree
+    std::vector<int>   tree_size;        // number of vertices in each root's tree
+    std::vector<int>   visit_stamp;      // generation counter per vertex
+    int                pivot_call_id = 0; // incremented each FindPivots call
 
-    // settled_level_[v] = the recursion level at which v was last settled.
-    std::vector<int>   settled_level_;
+    // settled_level[v] = the recursion level at which v was last settled.
+    std::vector<int>   settled_level;
 
     // ── Infinity constant ─────────────────────────────────────────────────────
     const double INF = std::numeric_limits<double>::max() / 10.0;

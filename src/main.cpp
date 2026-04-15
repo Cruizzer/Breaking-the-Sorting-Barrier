@@ -21,11 +21,13 @@ void print_usage(const char* program_name) {
     std::cout << "\nOptions:\n";
     std::cout << "  --trials K                      Run K trials with random sources (default: 1)\n";
     std::cout << "  --report FILE                   Save benchmark report to CSV file\n";
+    std::cout << "  --dijkstra TYPE                 Dijkstra variant: binary (default) or fib\n";
     std::cout << "\nExamples:\n";
     std::cout << "  " << program_name << " --generate er 10000 4\n";
     std::cout << "  " << program_name << " --generate ba 10000 3\n";
     std::cout << "  " << program_name << " --generate random 100000 6 --trials 5\n";
     std::cout << "  " << program_name << " --generate grid 100 100 --report results.csv\n";
+    std::cout << "  " << program_name << " --generate er 100000 8 --dijkstra fib\n";
 }
 
 int main(int argc, char** argv) {
@@ -107,6 +109,7 @@ int main(int argc, char** argv) {
     // Parse options
     size_t num_trials = 1;
     std::string report_file;
+    std::string dijkstra_type = "binary";
     
     for (int i = 4; i < argc; ++i) {
         std::string arg = argv[i];
@@ -114,17 +117,30 @@ int main(int argc, char** argv) {
             num_trials = std::stoull(argv[++i]);
         } else if (arg == "--report" && i + 1 < argc) {
             report_file = argv[++i];
+        } else if (arg == "--dijkstra" && i + 1 < argc) {
+            dijkstra_type = argv[++i];
         }
+    }
+
+    benchmark::AlgorithmFunc dijkstra_func = algorithms::dijkstra;
+    std::string dijkstra_label = "Dijkstra (binary heap)";
+    if (dijkstra_type == "fib" || dijkstra_type == "fibonacci") {
+        dijkstra_func = algorithms::dijkstra_fibonacci;
+        dijkstra_label = "Dijkstra (Fibonacci heap)";
+    } else if (dijkstra_type != "binary") {
+        std::cerr << "Error: --dijkstra must be one of: binary, fib\n";
+        return 1;
     }
     
     // Run benchmarks
     std::cout << "\n=== Running Benchmarks ===\n";
     std::cout << "Trials: " << num_trials << "\n";
+    std::cout << "Dijkstra variant: " << dijkstra_label << "\n";
     
     if (num_trials == 1) {
         // Single trial from vertex 0
         auto result = benchmark::compare_algorithms(
-            algorithms::dijkstra,
+            dijkstra_func,
             algorithms::bmssp,
             graph,
             0
@@ -189,7 +205,7 @@ int main(int argc, char** argv) {
                       << " (source: " << source << ")...\n";
             
             auto result = benchmark::compare_algorithms(
-                algorithms::dijkstra,
+                dijkstra_func,
                 algorithms::bmssp,
                 graph,
                 source
