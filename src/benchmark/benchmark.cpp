@@ -16,6 +16,24 @@ static size_t count_edges(const Graph& graph) {
     return total;
 }
 
+static bool distances_match(const std::vector<Weight>& a, const std::vector<Weight>& b) {
+    if (a.size() != b.size()) return false;
+
+    const double epsilon = 1e-6;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (std::isinf(a[i]) && std::isinf(b[i])) {
+            continue;
+        }
+
+        double diff = std::abs(a[i] - b[i]);
+        if (diff > epsilon) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 BenchmarkResult run_benchmark(
     const std::string& algorithm_name,
     AlgorithmFunc algorithm,
@@ -95,6 +113,37 @@ ComparisonResult compare_algorithms(
         }
     }
     
+    return comparison;
+}
+
+ThreeWayComparisonResult compare_three_algorithms(
+    AlgorithmFunc dijkstra,
+    AlgorithmFunc dijkstra_fibonacci,
+    AlgorithmFunc bmssp,
+    const Graph& graph,
+    Vertex source
+) {
+    ThreeWayComparisonResult comparison;
+
+    comparison.dijkstra_result = run_benchmark("Dijkstra", dijkstra, graph, source);
+    comparison.dijkstra_fibonacci_result = run_benchmark("Dijkstra Fibonacci", dijkstra_fibonacci, graph, source);
+    comparison.bmssp_result = run_benchmark("BMSSP", bmssp, graph, source);
+
+    comparison.bmssp_speedup_vs_dijkstra = comparison.dijkstra_result.execution_time_us /
+                                           comparison.bmssp_result.execution_time_us;
+    comparison.bmssp_speedup_vs_dijkstra_fibonacci = comparison.dijkstra_fibonacci_result.execution_time_us /
+                                                     comparison.bmssp_result.execution_time_us;
+    comparison.dijkstra_fibonacci_speedup_vs_dijkstra = comparison.dijkstra_result.execution_time_us /
+                                                        comparison.dijkstra_fibonacci_result.execution_time_us;
+
+    const auto& dijkstra_distances = comparison.dijkstra_result.distances;
+    const auto& dijkstra_fibonacci_distances = comparison.dijkstra_fibonacci_result.distances;
+    const auto& bmssp_distances = comparison.bmssp_result.distances;
+
+    comparison.dijkstra_and_fibonacci_match = distances_match(dijkstra_distances, dijkstra_fibonacci_distances);
+    comparison.dijkstra_and_bmssp_match = distances_match(dijkstra_distances, bmssp_distances);
+    comparison.dijkstra_fibonacci_and_bmssp_match = distances_match(dijkstra_fibonacci_distances, bmssp_distances);
+
     return comparison;
 }
 
@@ -188,6 +237,39 @@ void print_comparison(const ComparisonResult& result) {
     std::cout << std::string(70, '=') << "\n";
 }
 
+void print_comparison(const ThreeWayComparisonResult& result) {
+    std::cout << "\n" << std::string(70, '=') << "\n";
+    std::cout << "ALGORITHM COMPARISON (THREE-WAY)\n";
+    std::cout << std::string(70, '=') << "\n";
+
+    print_result(result.dijkstra_result);
+    print_result(result.dijkstra_fibonacci_result);
+    print_result(result.bmssp_result);
+
+    std::cout << "\n=== Performance Comparison ===\n";
+    std::cout << "BMSSP vs Dijkstra speedup: " << std::fixed << std::setprecision(2)
+              << result.bmssp_speedup_vs_dijkstra << "x\n";
+    std::cout << "BMSSP vs Fibonacci speedup: " << std::fixed << std::setprecision(2)
+              << result.bmssp_speedup_vs_dijkstra_fibonacci << "x\n";
+    std::cout << "Fibonacci vs Dijkstra speedup: " << std::fixed << std::setprecision(2)
+              << result.dijkstra_fibonacci_speedup_vs_dijkstra << "x\n";
+
+    std::cout << "Results match (binary vs Fibonacci): "
+              << (result.dijkstra_and_fibonacci_match ? "YES" : "NO") << "\n";
+    std::cout << "Results match (binary vs BMSSP): "
+              << (result.dijkstra_and_bmssp_match ? "YES" : "NO") << "\n";
+    std::cout << "Results match (Fibonacci vs BMSSP): "
+              << (result.dijkstra_fibonacci_and_bmssp_match ? "YES" : "NO") << "\n";
+
+    if (!(result.dijkstra_and_fibonacci_match &&
+          result.dijkstra_and_bmssp_match &&
+          result.dijkstra_fibonacci_and_bmssp_match)) {
+        std::cout << "WARNING: Algorithms produced different results!\n";
+    }
+
+    std::cout << std::string(70, '=') << "\n";
+}
+
 void generate_report(const std::vector<ComparisonResult>& results, const std::string& filename) {
     std::ofstream file(filename);
     
@@ -208,6 +290,37 @@ void generate_report(const std::vector<ComparisonResult>& results, const std::st
              << (result.results_match ? "YES" : "NO") << "\n";
     }
     
+    file.close();
+    std::cout << "\nReport saved to: " << filename << "\n";
+}
+
+void generate_report(const std::vector<ThreeWayComparisonResult>& results, const std::string& filename) {
+    std::ofstream file(filename);
+
+    if (!file.is_open()) {
+        std::cerr << "Failed to open file: " << filename << "\n";
+        return;
+    }
+
+    file << "Graph Size,Edges,Avg Degree,Dijkstra (ms),Dijkstra Fib (ms),BMSSP (ms),"
+         << "BMSSP vs Dijkstra Speedup,BMSSP vs Dijkstra Fib Speedup,Fib vs Dijkstra Speedup,"
+         << "Match Dijkstra/Fib,Match Dijkstra/BMSSP,Match Fib/BMSSP\n";
+
+    for (const auto& result : results) {
+        file << result.dijkstra_result.graph_size << ","
+             << result.dijkstra_result.edge_count << ","
+             << std::fixed << std::setprecision(2) << result.dijkstra_result.avg_degree << ","
+             << std::fixed << std::setprecision(3) << result.dijkstra_result.execution_time_ms << ","
+             << std::fixed << std::setprecision(3) << result.dijkstra_fibonacci_result.execution_time_ms << ","
+             << std::fixed << std::setprecision(3) << result.bmssp_result.execution_time_ms << ","
+             << std::fixed << std::setprecision(2) << result.bmssp_speedup_vs_dijkstra << ","
+             << std::fixed << std::setprecision(2) << result.bmssp_speedup_vs_dijkstra_fibonacci << ","
+             << std::fixed << std::setprecision(2) << result.dijkstra_fibonacci_speedup_vs_dijkstra << ","
+             << (result.dijkstra_and_fibonacci_match ? "YES" : "NO") << ","
+             << (result.dijkstra_and_bmssp_match ? "YES" : "NO") << ","
+             << (result.dijkstra_fibonacci_and_bmssp_match ? "YES" : "NO") << "\n";
+    }
+
     file.close();
     std::cout << "\nReport saved to: " << filename << "\n";
 }

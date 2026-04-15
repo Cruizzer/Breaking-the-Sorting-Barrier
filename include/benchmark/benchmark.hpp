@@ -43,6 +43,19 @@ struct ComparisonResult {
     bool results_match;     // Do both algorithms produce same distances?
 };
 
+// Three-way comparison result
+struct ThreeWayComparisonResult {
+    BenchmarkResult dijkstra_result;
+    BenchmarkResult dijkstra_fibonacci_result;
+    BenchmarkResult bmssp_result;
+    double bmssp_speedup_vs_dijkstra;
+    double bmssp_speedup_vs_dijkstra_fibonacci;
+    double dijkstra_fibonacci_speedup_vs_dijkstra;
+    bool dijkstra_and_fibonacci_match;
+    bool dijkstra_and_bmssp_match;
+    bool dijkstra_fibonacci_and_bmssp_match;
+};
+
 // Run a single algorithm benchmark
 BenchmarkResult run_benchmark(
     const std::string& algorithm_name,
@@ -54,6 +67,15 @@ BenchmarkResult run_benchmark(
 // Run comparison between Dijkstra and BMSSP
 ComparisonResult compare_algorithms(
     AlgorithmFunc dijkstra,
+    AlgorithmFunc bmssp,
+    const Graph& graph,
+    Vertex source
+);
+
+// Run comparison between binary Dijkstra, Fibonacci Dijkstra, and BMSSP
+ThreeWayComparisonResult compare_three_algorithms(
+    AlgorithmFunc dijkstra,
+    AlgorithmFunc dijkstra_fibonacci,
     AlgorithmFunc bmssp,
     const Graph& graph,
     Vertex source
@@ -73,7 +95,13 @@ void print_result(const BenchmarkResult& result);
 // Print comparison result
 void print_comparison(const ComparisonResult& result);
 
+// Print three-way comparison result
+void print_comparison(const ThreeWayComparisonResult& result);
+
 // Generate performance report
 void generate_report(const std::vector<ComparisonResult>& results, const std::string& filename);
+
+// Generate performance report for three-way comparisons
+void generate_report(const std::vector<ThreeWayComparisonResult>& results, const std::string& filename);
 
 } // namespace benchmark

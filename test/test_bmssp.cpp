@@ -8,6 +8,16 @@
 
 using Catch::Approx;
 
+static void require_distances_match(const std::vector<Weight>& a, const std::vector<Weight>& b, double eps = 1e-9) {
+    REQUIRE(a.size() == b.size());
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (std::isinf(a[i]) && std::isinf(b[i])) {
+            continue;
+        }
+        REQUIRE(a[i] == Approx(b[i]).margin(eps));
+    }
+}
+
 // These tests verify that BMSSP produces the same results as Dijkstra
 // Initially they will fail since BMSSP is stubbed out
 
@@ -23,9 +33,11 @@ TEST_CASE("BMSSP: Simple 3-vertex graph", "[bmssp]") {
     
     SECTION("All distances match Dijkstra") {
         auto dist_dijkstra = algorithms::dijkstra(g, 0);
+        auto dist_fibonacci = algorithms::dijkstra_fibonacci(g, 0);
         auto dist_bmssp = algorithms::bmssp(g, 0);
         
         REQUIRE(dist_bmssp.size() == dist_dijkstra.size());
+        require_distances_match(dist_dijkstra, dist_fibonacci);
         for (size_t i = 0; i < dist_dijkstra.size(); ++i) {
             if (std::isinf(dist_dijkstra[i])) {
                 REQUIRE(std::isinf(dist_bmssp[i]));
@@ -70,8 +82,10 @@ TEST_CASE("BMSSP: Disconnected graph", "[bmssp]") {
     
     SECTION("Unreachable vertices match Dijkstra") {
         auto dist_dijkstra = algorithms::dijkstra(g, 0);
+        auto dist_fibonacci = algorithms::dijkstra_fibonacci(g, 0);
         auto dist_bmssp = algorithms::bmssp(g, 0);
         
+        require_distances_match(dist_dijkstra, dist_fibonacci);
         for (size_t i = 0; i < dist_dijkstra.size(); ++i) {
             if (std::isinf(dist_dijkstra[i])) {
                 REQUIRE(std::isinf(dist_bmssp[i]));
@@ -95,8 +109,10 @@ TEST_CASE("BMSSP: Diamond graph", "[bmssp]") {
     
     SECTION("Chooses shortest path like Dijkstra") {
         auto dist_dijkstra = algorithms::dijkstra(g, 0);
+        auto dist_fibonacci = algorithms::dijkstra_fibonacci(g, 0);
         auto dist_bmssp = algorithms::bmssp(g, 0);
         
+        require_distances_match(dist_dijkstra, dist_fibonacci);
         for (size_t i = 0; i < dist_dijkstra.size(); ++i) {
             REQUIRE(dist_bmssp[i] == Approx(dist_dijkstra[i]));
         }
@@ -116,8 +132,10 @@ TEST_CASE("BMSSP: Linear chain", "[bmssp]") {
     
     SECTION("Path distances match Dijkstra") {
         auto dist_dijkstra = algorithms::dijkstra(g, 0);
+        auto dist_fibonacci = algorithms::dijkstra_fibonacci(g, 0);
         auto dist_bmssp = algorithms::bmssp(g, 0);
         
+        require_distances_match(dist_dijkstra, dist_fibonacci);
         for (int i = 0; i < n; ++i) {
             REQUIRE(dist_bmssp[i] == Approx(dist_dijkstra[i]));
         }
@@ -142,8 +160,10 @@ TEST_CASE("BMSSP: Complete graph", "[bmssp]") {
     
     SECTION("All distances match Dijkstra") {
         auto dist_dijkstra = algorithms::dijkstra(g, 0);
+        auto dist_fibonacci = algorithms::dijkstra_fibonacci(g, 0);
         auto dist_bmssp = algorithms::bmssp(g, 0);
         
+        require_distances_match(dist_dijkstra, dist_fibonacci);
         for (size_t i = 0; i < dist_dijkstra.size(); ++i) {
             REQUIRE(dist_bmssp[i] == Approx(dist_dijkstra[i]));
         }
