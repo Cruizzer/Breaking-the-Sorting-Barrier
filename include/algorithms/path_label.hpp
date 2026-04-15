@@ -1,11 +1,9 @@
-// path_label.hpp
-// =============================================================================
 // Implements the "path label" concept from Section 2 of Duan et al. (2025).
 //
 // Background — Assumption 2.1 (Total order of paths)
 // ---------------------------------------------------
 // The correctness of Algorithm 3 (BMSSP) relies on every path from the source
-// having a *unique* length.  Real-weighted graphs do not guarantee this in
+// having a 'unique' length.  Real-weighted graphs do not guarantee this in
 // general, so the paper augments each distance estimate with extra fields that
 // break ties deterministically.
 //

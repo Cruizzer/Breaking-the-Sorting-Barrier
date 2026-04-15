@@ -48,7 +48,7 @@ public:
     {}
 
     // Returns a reference to the value at key, marking the slot as present.
-    // If the slot was absent the stored value is undefined — callers must
+    // If the slot was absent the stored value is undefined. Callers must
     // assign before reading.
     double& operator[](int key) {
         generations_[key] = current_generation_;
