@@ -3,8 +3,8 @@
 // Background — Assumption 2.1 (Total order of paths)
 // ---------------------------------------------------
 // The correctness of Algorithm 3 (BMSSP) relies on every path from the source
-// having a 'unique' length.  Real-weighted graphs do not guarantee this in
-// general, so the paper augments each distance estimate with extra fields that
+// having a 'unique' length. Real-weighted graphs do not guarantee this in
+// general, so the paper augments each distance estimate with extra fields to
 // break ties deterministically.
 //
 // A path label is the tuple:
@@ -12,19 +12,19 @@
 //     ( length, hop_count, destination, predecessor )
 //
 // and paths are compared lexicographically on this tuple (Section 2, "Total
-// order of Paths").  The paper notes that O(1)-time comparison is achievable
-// because, when lengths and hop counts are equal, it suffices to compare just
-// the destination vertices (or the predecessor vertices when the destinations
-// are also equal).  All four fields are stored together here for simplicity.
+// order of Paths"). The paper notes O(1)-time comparison is achievable
+// because, when lengths and hop counts are equal, it is enough to compare
+// destination vertices (or predecessor vertices when destinations also match).
+// All four fields are stored together here for clarity.
 //
 // Floating-point rounding
 // -----------------------
 // Accumulated additions on double-precision values can produce tiny rounding
-// differences between paths that are arithmetically identical.  To prevent
-// such noise from creating spurious inequalities, the length field is rounded
-// to a fixed number of decimal places on construction.  The scale factor (1e9)
-// gives nine decimal places of precision, which is sufficient for most
-// real-world weight ranges without distorting the ordering.
+// differences between paths that are arithmetically identical. To prevent
+// this noise from creating spurious inequalities, the length field is rounded
+// to a fixed number of decimal places on construction. The scale factor (1e9)
+// gives nine decimal places of precision, which is usually enough for practical
+// weight ranges without distorting the ordering.
 // =============================================================================
 
 #ifndef PATH_LABEL_HPP
@@ -37,7 +37,7 @@
 namespace duan25 {
 
 // Precision constant used to round accumulated floating-point lengths.
-// Rounding to 1/ROUND_SCALE decimal places suppresses sub-epsilon noise
+// Rounding to 1/ROUND_SCALE decimal places suppresses tiny floating-point noise
 // without affecting the correctness of distance comparisons.
 static const double ROUND_SCALE = 1e9;
 

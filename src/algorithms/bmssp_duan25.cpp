@@ -58,7 +58,7 @@ std::pair<std::vector<double>, std::vector<int>> Solver::execute(int source) {
 
 std::vector<int> Solver::reconstruct_path(int target,
                                           const std::vector<int>& real_pred) const {
-    // Check reachability against the internal distance for the target's proxy node.
+    // Check reachability using the internal distance of the target's proxy node.
     int internal_target = real_to_internal_[target];
     if (dist_estimate_[internal_target] >= INF) return {};
 
@@ -452,8 +452,8 @@ std::vector<Weight> bmssp(const Graph& graph, Vertex source) {
     solver.prepare_graph(false);
     auto [distances, _] = solver.execute(source);
 
-    // Convert solver sentinel (very large finite) to true infinity so output
-    // semantics match Dijkstra and downstream diagnostics.
+    // Convert the solver sentinel (very large finite value) to true infinity
+    // so output semantics match Dijkstra and downstream diagnostics.
     const double unreachable_threshold = std::numeric_limits<double>::max() / 20.0;
     for (double& d : distances) {
         if (d >= unreachable_threshold) {
@@ -486,7 +486,7 @@ std::vector<Vertex> bmssp_path(const Graph& graph, Vertex source, Vertex target)
     // Reconstruct path
     auto path = solver.reconstruct_path(target, predecessors);
     
-    // Convert from int to Vertex
+    // Convert int path entries to Vertex
     std::vector<Vertex> result;
     for (int v : path) {
         result.push_back(static_cast<Vertex>(v));

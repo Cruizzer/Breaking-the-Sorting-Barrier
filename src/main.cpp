@@ -151,11 +151,11 @@ int main(int argc, char** argv) {
                     std::cout << "\n  BMSSP path:    ";
                     for (auto x : path_bm) std::cout << x << " ";
                     std::cout << "\n";
-                        // Print adjacency lists for nodes involved in the differing paths
+                        // Print adjacency lists for nodes appearing in the differing paths
                         std::vector<Vertex> inspect = {0, v};
                         inspect.insert(inspect.end(), path_dij.begin(), path_dij.end());
                         inspect.insert(inspect.end(), path_bm.begin(), path_bm.end());
-                        // unique
+                        // Deduplicate
                         std::sort(inspect.begin(), inspect.end());
                         inspect.erase(std::unique(inspect.begin(), inspect.end()), inspect.end());
                         for (auto u : inspect) {
@@ -202,7 +202,7 @@ int main(int argc, char** argv) {
             std::cout << "  Speedup:  " << result.speedup_factor << "x\n";
         }
         
-        // Calculate average speedup
+        // Compute average speedup
         double avg_speedup = 0.0;
         double avg_dijkstra_time = 0.0;
         double avg_bmssp_time = 0.0;

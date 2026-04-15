@@ -1,33 +1,23 @@
 // direct_address_table.hpp
 // =============================================================================
-// A fixed-capacity map from integer keys [0, capacity) to double values,
-// supporting O(1) clear via a generation counter.
+// Fixed-capacity map from integer keys [0, capacity) to double values,
+// with O(1) clear using a generation counter.
 //
 // Why this structure?
 // -------------------
-// The BatchPQ data structure (Lemma 3.3) and the BMSSP subroutine both need
-// to track per-vertex information that must be reset at the start of each
-// recursive call.  A naive std::unordered_map would charge O(size) for clear,
-// which would break the time bounds.
+// The BatchPQ data structure (Lemma 3.3) and the BMSSP subroutine both track
+// per-vertex state that is reset at the start of each recursive call. A plain
+// std::unordered_map would make clear O(size), which hurts the stated bounds.
 //
-// The generation-counter trick avoids this: rather than writing a sentinel
-// value into every slot, we keep a global "current generation" integer.  A
-// slot is considered occupied if and only if its stored generation equals the
-// current one.  Calling clear() simply increments the current generation in
-// O(1), logically expiring every slot at once.
+// The generation-counter trick avoids that cost. Instead of writing a sentinel
+// into every slot, we keep a global "current generation" integer. A slot is
+// occupied iff its stored generation equals the current one. Calling clear()
+// just increments the generation in O(1), which expires all slots logically.
 //
-// This is the approach described in Section 4 of Castro et al. (2025):
-//   "we employ global direct-address tables (DATs) of size O(n) ... with
-//    O(log^{1/3} n) recursion levels, the total space complexity becomes
-//    Θ(n log^{1/3} n)."
+// This uses global direct-address tables of size O(n) at each recursion level.
+// With O(log^{1/3} n) recursion levels, total space is
+// Θ(n log^{1/3} n).
 //
-// Limitations
-// -----------
-//  - Keys must be non-negative integers strictly less than the capacity
-//    supplied to the constructor.
-//  - The generation counter wraps at INT_MAX.  For typical algorithm runs
-//    this is not a concern.
-//  - Iteration over all live entries is not supported.
 // =============================================================================
 
 #ifndef DIRECT_ADDRESS_TABLE_HPP

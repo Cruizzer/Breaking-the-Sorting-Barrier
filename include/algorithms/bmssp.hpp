@@ -1,4 +1,3 @@
-// bmssp.hpp
 // =============================================================================
 // Single-source shortest paths via the Bounded Multi-Source Shortest Path
 // algorithm of Duan, Mao, Mao, Shu and Yin (2025).
@@ -8,10 +7,6 @@
 //   Ran Duan, Jiayi Mao, Xiao Mao, Xinkai Shu, Longhui Yin.
 //   "Breaking the Sorting Barrier for Directed Single-Source Shortest Paths."
 //   STOC 2025.  https://arxiv.org/pdf/2504.17033
-//
-//   Implementation notes from:
-//   Castro, Clementino, de Freitas (2025).
-//   https://arxiv.org/pdf/2511.03007
 //
 // Time complexity:  O(m log^{2/3} n)  on a constant-degree graph.
 // Space complexity: O(n log^{1/3} n)
@@ -26,11 +21,11 @@
 // (i.e. makes its estimate exact), and returns a boundary B' <= B such that
 // all vertices with d(v) < B' are guaranteed complete.
 //
-// Three subroutines (directly corresponding to the three algorithms in the
-// paper) are implemented here as private member functions:
+// Three subroutines (matching the three algorithms in the paper) are
+// implemented here as private member functions:
 //
 //   find_pivots  — Algorithm 1: k rounds of Bellman-Ford to shrink the
-//                  source set S down to a small "pivot" set P.
+//                  source set S to a small "pivot" set P.
 //
 //   base_case    — Algorithm 2: plain Dijkstra, stops after settling k+1
 //                  vertices; used at recursion level 0.
@@ -40,7 +35,7 @@
 // Graph requirements
 // ------------------
 // The paper requires the input graph to have constant in- and out-degree.
-// Call prepare_graph(true) to apply the classical constant-degree
+// Call prepare_graph(true) to apply the standard constant-degree
 // transformation (described in Section 2 of the paper) before running
 // execute().  If your graph already has bounded degree, use
 // prepare_graph(false) (the default).
@@ -135,7 +130,7 @@ private:
     int t_;   // t = floor( log^{2/3}(n) )
 
     // One BatchPQ per recursion level (shared across sequential recursive calls
-    // at the same level to avoid repeated allocation — see Castro et al. §4).
+    // at the same level to avoid repeated allocations).
     std::vector<BatchPQ> level_pqs_;
 
     // ── FindPivots state (Algorithm 1) ────────────────────────────────────────
