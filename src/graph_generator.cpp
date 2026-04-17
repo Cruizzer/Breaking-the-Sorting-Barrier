@@ -12,7 +12,7 @@ void add_vertices_with_random_coords(Graph& g, size_t n, std::mt19937& rng) {
     }
 }
 
-inline size_t edge_key(size_t u, size_t v, size_t n) {
+size_t edge_key(size_t u, size_t v, size_t n) {
     if (u > v) std::swap(u, v);
     return u * n + v;
 }
@@ -36,7 +36,6 @@ Graph generate_erdos_renyi_graph(size_t n, double avg_degree, double min_weight,
     size_t target_edges = static_cast<size_t>(n * avg_degree / 2.0);
     std::uniform_int_distribution<size_t> vertex_dist(0, n - 1);
     std::unordered_set<size_t> existing_edges;
-    existing_edges.reserve(target_edges * 2 + 1);
 
     size_t added = 0;
     size_t attempts = 0;
@@ -77,7 +76,6 @@ Graph generate_barabasi_albert_graph(size_t n, size_t m_attach, double min_weigh
 
     std::vector<size_t> degree(n, 0);
     std::vector<size_t> repeated_nodes;
-    repeated_nodes.reserve(n * m_attach * 2);
 
     // Initial clique on m0 vertices
     for (size_t u = 0; u < m0; ++u) {
@@ -94,7 +92,6 @@ Graph generate_barabasi_albert_graph(size_t n, size_t m_attach, double min_weigh
 
     for (size_t v = m0; v < n; ++v) {
         std::unordered_set<size_t> chosen;
-        chosen.reserve(m_attach * 2);
 
         while (chosen.size() < m_attach) {
             size_t u;

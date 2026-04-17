@@ -229,7 +229,6 @@ Solver::find_pivots(PathLabel B, const std::vector<int>& S) {
     pivot_call_id++;
 
     std::vector<int> W;
-    W.reserve(2 * k * (int)S.size());
 
     for (int x : S) {
         W.push_back(x);
@@ -242,7 +241,6 @@ Solver::find_pivots(PathLabel B, const std::vector<int>& S) {
 
     for (int round = 1; round <= k; ++round) {
         std::vector<int> next_active;
-        next_active.reserve(active.size() * 4);
 
         for (int u : active) {
             for (const Edge& e : working_adj[u]) {
@@ -269,12 +267,11 @@ Solver::find_pivots(PathLabel B, const std::vector<int>& S) {
             return { S, W };
         }
 
-        active = std::move(next_active);
+        active = next_active;
     }
 
     for (int u : W) tree_size[pivot_root[u]]++;
     std::vector<int> P;
-    P.reserve((int)W.size() / k + 1);
     for (int u : S) {
         if (tree_size[u] >= k) P.push_back(u);
     }
@@ -290,7 +287,6 @@ Solver::find_pivots(PathLabel B, const std::vector<int>& S) {
 std::pair<PathLabel, std::vector<int>>
 Solver::base_case(PathLabel B, int x) {
     std::vector<int> settled;
-    settled.reserve(k + 1);
 
     using HeapEntry = std::pair<PathLabel, int>;
     std::priority_queue<HeapEntry,
@@ -347,7 +343,6 @@ Solver::bmssp_rec(int level, PathLabel B, const std::vector<int>& S) {
 
     std::vector<int> complete;
     const long long quota = k * (1ll << (level * t));
-    complete.reserve((int)quota + (int)W.size());
 
     while ((long long)complete.size() < quota && D.size() > 0) {
         auto [sub_bound, mini_S] = D.pull();
@@ -358,7 +353,6 @@ Solver::bmssp_rec(int level, PathLabel B, const std::vector<int>& S) {
                         inner_complete.begin(), inner_complete.end());
 
         std::vector<Entry> to_prepend;
-        to_prepend.reserve((int)inner_complete.size() * 4 + (int)mini_S.size());
 
         for (int u : inner_complete) {
             D.erase(u);

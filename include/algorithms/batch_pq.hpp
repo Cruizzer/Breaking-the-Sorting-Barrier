@@ -108,9 +108,7 @@ class BatchPQ {
 public:
     // Allocates the internal hash maps with enough capacity for n vertices.
     explicit BatchPQ(int n) {
-        best_label.reserve(n);
-        location_in_D0.reserve(n);
-        location_in_D1.reserve(n);
+        (void)n;
     }
 
     // Resets the queue for a new BMSSP call at some recursion level.
@@ -171,7 +169,6 @@ public:
     // Amortised cost: O(|entries| * log(|entries|/M)).
     void batch_prepend(const std::vector<Entry>& entries) {
         std::vector<Label> labels;
-        labels.reserve(entries.size());
         for (const auto& e : entries) labels.push_back(e.label);
         prepend_labels(labels);
     }
@@ -184,8 +181,6 @@ public:
     std::pair<Label, std::vector<int>> pull() {
         // Collect at most block_size elements from the front of D0 and D1.
         std::vector<Element> from_D0, from_D1;
-        from_D0.reserve(2 * block_size);
-        from_D1.reserve(block_size);
 
         auto it_block = D0.begin();
         while (it_block != D0.end() && (int)from_D0.size() <= block_size) {
@@ -202,7 +197,6 @@ public:
         // If the total fits within one batch, return everything.
         if ((int)(from_D0.size() + from_D1.size()) <= block_size) {
             std::vector<int> result;
-            result.reserve(from_D0.size() + from_D1.size());
             for (auto [v, lbl] : from_D0) {
                 result.push_back(v);
                 remove_vertex(lbl);
@@ -221,7 +215,6 @@ public:
 
         Label median = select_kth(combined, block_size);
         std::vector<int> result;
-        result.reserve(block_size);
         for (auto [v, lbl] : combined) {
             if (lbl < median) {
                 result.push_back(v);
