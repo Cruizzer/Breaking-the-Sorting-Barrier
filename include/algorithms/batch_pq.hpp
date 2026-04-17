@@ -45,6 +45,7 @@
 
 #include <algorithm>
 #include <list>
+#include <unordered_set>
 #include <set>
 #include <unordered_map>
 #include <utility>
@@ -169,6 +170,7 @@ public:
     // Amortised cost: O(|entries| * log(|entries|/M)).
     void batch_prepend(const std::vector<Entry>& entries) {
         std::vector<Label> labels;
+        labels.reserve(entries.size());
         for (const auto& e : entries) labels.push_back(e.label);
         prepend_labels(labels);
     }
@@ -179,32 +181,12 @@ public:
     // remaining element (or bound if the queue is now empty).
     // Cost: O(block_size).
     std::pair<Label, std::vector<int>> pull() {
-        // Collect at most block_size elements from the front of D0 and D1.
-        std::vector<Element> from_D0, from_D1;
-
-        auto it_block = D0.begin();
-        while (it_block != D0.end() && (int)from_D0.size() <= block_size) {
-            for (const auto& x : *it_block) from_D0.push_back(x);
-            it_block++;
-        }
-
-        it_block = D1.begin();
-        while (it_block != D1.end() && (int)from_D1.size() <= block_size) {
-            for (const auto& x : *it_block) from_D1.push_back(x);
-            it_block++;
-        }
+        auto from_D0 = collect_prefix(D0);
+        auto from_D1 = collect_prefix(D1);
 
         // If the total fits within one batch, return everything.
         if ((int)(from_D0.size() + from_D1.size()) <= block_size) {
-            std::vector<int> result;
-            for (auto [v, lbl] : from_D0) {
-                result.push_back(v);
-                remove_vertex(lbl);
-            }
-            for (auto [v, lbl] : from_D1) {
-                result.push_back(v);
-                remove_vertex(lbl);
-            }
+            std::vector<int> result = drain_selected(from_D0, from_D1);
             return { bound, result };
         }
 
@@ -214,13 +196,7 @@ public:
         combined.insert(combined.end(), from_D1.begin(), from_D1.end());
 
         Label median = select_kth(combined, block_size);
-        std::vector<int> result;
-        for (auto [v, lbl] : combined) {
-            if (lbl < median) {
-                result.push_back(v);
-                remove_vertex(lbl);
-            }
-        }
+        std::vector<int> result = drain_below(combined, median);
         return { median, result };
     }
 
@@ -330,60 +306,112 @@ private:
     // (smaller half last, so it ends up at the front).
     void prepend_labels(const std::vector<Label>& labels) {
         std::list<Element> elements;
+        std::unordered_map<int, Label> best_local;
         for (const auto& lbl : labels) {
-            elements.push_back({ lbl.destination, lbl });
+            auto it = best_local.find(lbl.destination);
+            if (it == best_local.end() || lbl < it->second) {
+                best_local[lbl.destination] = lbl;
+            }
+        }
+
+        for (const auto& [vertex, lbl] : best_local) {
+            elements.push_back({ vertex, lbl });
         }
         prepend_elements(elements);
     }
 
     void prepend_elements(const std::list<Element>& elements) {
-        int count = (int)elements.size();
-        if (count == 0) return;
+        std::vector<std::list<Element>> pending;
+        pending.push_back(elements);
 
-        if (count <= block_size) {
-            // Small enough to go directly into a single D0 block.
-            D0.push_front(Block());
-            auto new_block = D0.begin();
+        while (!pending.empty()) {
+            std::list<Element> current = std::move(pending.back());
+            pending.pop_back();
 
-            for (const auto& elem : elements) {
-                auto existing = best_label.find(elem.first);
-                bool found    = (existing != best_label.end());
+            int count = (int)current.size();
+            if (count == 0) continue;
 
-                if (found && existing->second > elem.second) {
-                    remove_vertex(elem.second);
-                } else if (found) {
-                    continue;
+            if (count <= block_size) {
+                insert_prepend_block(current);
+                continue;
+            }
+
+            std::vector<Element> as_vec(current.begin(), current.end());
+            Label median = select_kth(as_vec, count / 2);
+
+            std::list<Element> lower_half, upper_half;
+            for (const auto& [v, lbl] : current) {
+                if (lbl < median) {
+                    lower_half.push_back({ v, lbl });
+                } else if (lbl > median) {
+                    upper_half.push_back({ v, lbl });
                 }
+            }
+            upper_half.push_back({ median.destination, median });
 
-                new_block->push_back(elem);
-                auto it_new_elem = new_block->end();
-                it_new_elem--;
-                location_in_D0[elem.first] = { new_block, it_new_elem };
-                best_label[elem.first]     = elem.second;
-                num_elements++;
+            pending.push_back(std::move(lower_half));
+            pending.push_back(std::move(upper_half));
+        }
+    }
+
+    std::vector<Element> collect_prefix(const Blocks& blocks) {
+        std::vector<Element> collected;
+        auto it_block = blocks.begin();
+        while (it_block != blocks.end() && (int)collected.size() <= block_size) {
+            for (const auto& x : *it_block) collected.push_back(x);
+            ++it_block;
+        }
+        return collected;
+    }
+
+    std::vector<int> drain_selected(const std::vector<Element>& from_D0,
+                                    const std::vector<Element>& from_D1) {
+        std::vector<int> result;
+        for (const auto& [v, lbl] : from_D0) {
+            result.push_back(v);
+            remove_vertex(lbl);
+        }
+        for (const auto& [v, lbl] : from_D1) {
+            result.push_back(v);
+            remove_vertex(lbl);
+        }
+        return result;
+    }
+
+    std::vector<int> drain_below(const std::vector<Element>& combined, const Label& cut) {
+        std::vector<int> result;
+        for (const auto& [v, lbl] : combined) {
+            if (lbl < cut) {
+                result.push_back(v);
+                remove_vertex(lbl);
+            }
+        }
+        return result;
+    }
+
+    void insert_prepend_block(const std::list<Element>& elements) {
+        D0.push_front(Block());
+        auto new_block = D0.begin();
+
+        for (const auto& elem : elements) {
+            auto existing = best_label.find(elem.first);
+            bool found    = (existing != best_label.end());
+
+            if (found && existing->second > elem.second) {
+                remove_vertex(elem.second);
+            } else if (found) {
+                continue;
             }
 
-            if (new_block->empty()) D0.erase(new_block);
-            return;
+            new_block->push_back(elem);
+            auto it_new_elem = new_block->end();
+            --it_new_elem;
+            location_in_D0[elem.first] = { new_block, it_new_elem };
+            best_label[elem.first]     = elem.second;
+            num_elements++;
         }
 
-        // Too large for one block: split at the median and recurse.
-        // The upper half is prepended first so the lower half ends up in front.
-        std::vector<Element> as_vec(elements.begin(), elements.end());
-        Label median = select_kth(as_vec, count / 2);
-
-        std::list<Element> lower_half, upper_half;
-        for (auto [v, lbl] : elements) {
-            if (lbl < median) {
-                lower_half.push_back({ v, lbl });
-            } else if (lbl > median) {
-                upper_half.push_back({ v, lbl });
-            }
-        }
-        upper_half.push_back({ median.destination, median });
-
-        prepend_elements(upper_half);
-        prepend_elements(lower_half);
+        if (new_block->empty()) D0.erase(new_block);
     }
 };
 

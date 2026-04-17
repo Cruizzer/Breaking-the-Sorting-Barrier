@@ -5,6 +5,7 @@
 #include "algorithms/dijkstra.hpp"
 #include <limits>
 #include <cmath>
+#include <stdexcept>
 
 using Catch::Approx;
 
@@ -180,5 +181,31 @@ TEST_CASE("BMSSP: Self-loop handling", "[bmssp]") {
         
         REQUIRE(dist_bmssp[0] == Approx(0.0));
         REQUIRE(dist_bmssp[0] == Approx(dist_dijkstra[0]));
+    }
+}
+
+TEST_CASE("BMSSP: input validation", "[bmssp]") {
+    SECTION("rejects negative weights") {
+        Graph g;
+        g.add_vertex(0.0, 0.0);
+        g.add_vertex(1.0, 1.0);
+        g.adj[0].push_back({1, -1.0, "bad"});
+
+        REQUIRE_THROWS_AS(algorithms::bmssp(g, 0), std::invalid_argument);
+    }
+
+    SECTION("rejects out-of-range sources") {
+        Graph g;
+        g.add_vertex(0.0, 0.0);
+
+        REQUIRE_THROWS_AS(algorithms::bmssp(g, 1), std::out_of_range);
+    }
+
+    SECTION("handles out-of-range targets safely") {
+        Graph g;
+        g.add_vertex(0.0, 0.0);
+
+        REQUIRE(algorithms::bmssp_single_target(g, 0, 1) == std::numeric_limits<double>::infinity());
+        REQUIRE(algorithms::bmssp_path(g, 0, 1).empty());
     }
 }

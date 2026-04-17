@@ -61,6 +61,7 @@
 #include <algorithm>
 #include <cassert>
 #include <numeric>
+#include <stdexcept>
 
 #include "path_label.hpp"
 #include "batch_pq.hpp"
@@ -148,6 +149,8 @@ private:
     // ── Private methods  ────────────────────────────────────────────────────────
     
     void remove_parallel_edges();
+    void validate_input_graph() const;
+    void validate_real_vertex(int v) const;
     void build_identity_node_map();
     void apply_constant_degree_transform();
     void allocate_algorithm_state();
@@ -166,9 +169,28 @@ private:
     std::pair<PathLabel, std::vector<int>>
     bmssp_rec(int level, PathLabel B, const std::vector<int>& S);
 
+    struct LevelStep {
+        PathLabel bound;
+        std::vector<int> completed;
+    };
+
+    struct PivotBatch {
+        std::vector<int> pivots;
+        std::vector<int> visited;
+    };
+
+    PivotBatch discover_pivots(PathLabel B, const std::vector<int>& seeds);
+    LevelStep process_level(int level, PathLabel B, const std::vector<int>& seeds);
+    void relax_from_completed_vertices(int level,
+                                       PathLabel parent_bound,
+                                       PathLabel child_pull_bound,
+                                       PathLabel child_complete_bound,
+                                       const std::vector<int>& completed,
+                                       std::vector<Entry>& postponed,
+                                       BatchPQ& queue);
+
     int real_predecessor_of(int v) const;
     std::pair<std::vector<double>, std::vector<int>> build_output() const;
-    std::pair<std::vector<double>, std::vector<int>> build_output_const() const;
 };
 
 } // namespace duan25

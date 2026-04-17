@@ -24,11 +24,17 @@ Solver::Solver(const AdjList& adj)
 // ─────────────────────────────────────────────────────────────────────────────
 
 void Solver::add_edge(int u, int v, double w) {
+    validate_real_vertex(u);
+    validate_real_vertex(v);
+    if (!std::isfinite(w) || w < 0.0) {
+        throw std::invalid_argument("bmssp: edge weights must be finite and non-negative");
+    }
     input_adj[u].push_back({ v, w });
 }
 
 void Solver::prepare_graph(bool apply_cd_transform) {
     cd_transform_applied = apply_cd_transform;
+    validate_input_graph();
     remove_parallel_edges();
 
     if (!apply_cd_transform) {
@@ -41,6 +47,7 @@ void Solver::prepare_graph(bool apply_cd_transform) {
 }
 
 std::pair<std::vector<double>, std::vector<int>> Solver::execute(int source) {
+    validate_real_vertex(source);
     reset_state();
 
     int internal_src = real_to_internal[source];
@@ -58,6 +65,9 @@ std::pair<std::vector<double>, std::vector<int>> Solver::execute(int source) {
 
 std::vector<int> Solver::reconstruct_path(int target,
                                           const std::vector<int>& real_pred) const {
+    if (target < 0 || target >= num_real_vertices) return {};
+    if (real_pred.size() != static_cast<size_t>(num_real_vertices)) return {};
+
     // Check reachability using the internal distance of the target's proxy node.
     int internal_target = real_to_internal[target];
     if (dist_estimate[internal_target] >= INF) return {};
@@ -106,6 +116,25 @@ void Solver::remove_parallel_edges() {
             }
         }
         input_adj[u] = std::move(clean);
+    }
+}
+
+void Solver::validate_input_graph() const {
+    for (int u = 0; u < num_real_vertices; ++u) {
+        for (const Edge& e : input_adj[u]) {
+            if (e.to < 0 || e.to >= num_real_vertices) {
+                throw std::out_of_range("bmssp: edge endpoint is out of range");
+            }
+            if (!std::isfinite(e.weight) || e.weight < 0.0) {
+                throw std::invalid_argument("bmssp: edge weights must be finite and non-negative");
+            }
+        }
+    }
+}
+
+void Solver::validate_real_vertex(int v) const {
+    if (v < 0 || v >= num_real_vertices) {
+        throw std::out_of_range("bmssp: vertex index is out of range");
     }
 }
 
@@ -226,6 +255,11 @@ void Solver::relax(int u, int v, double w) {
 
 std::pair<std::vector<int>, std::vector<int>>
 Solver::find_pivots(PathLabel B, const std::vector<int>& S) {
+    auto batch = discover_pivots(B, S);
+    return { batch.pivots, batch.visited };
+}
+
+Solver::PivotBatch Solver::discover_pivots(PathLabel B, const std::vector<int>& S) {
     pivot_call_id++;
 
     std::vector<int> W;
@@ -328,69 +362,83 @@ std::pair<PathLabel, std::vector<int>>
 Solver::bmssp_rec(int level, PathLabel B, const std::vector<int>& S) {
     if (level == 0) return base_case(B, S[0]);
 
-    auto [P, W] = find_pivots(B, S);
+    LevelStep step = process_level(level, B, S);
+    return { step.bound, step.completed };
+}
+
+Solver::LevelStep Solver::process_level(int level, PathLabel B, const std::vector<int>& S) {
+    auto pivots = discover_pivots(B, S);
 
     const long long batch_size = (1ll << ((level - 1) * t));
-    BatchPQ& D = level_pqs[level - 1];
-    D.initialise(batch_size, B);
+    BatchPQ& queue = level_pqs[level - 1];
+    queue.initialise(batch_size, B);
 
-    for (int p : P) D.insert(p, label_of(p));
+    for (int p : pivots.pivots) queue.insert(p, label_of(p));
 
-    PathLabel last_inner_bound = B;
-    for (int p : P)
-        if (label_of(p) < last_inner_bound)
-            last_inner_bound = label_of(p);
-
-    std::vector<int> complete;
+    std::vector<int> completed;
     const long long quota = k * (1ll << (level * t));
+    PathLabel frontier_bound = B;
 
-    while ((long long)complete.size() < quota && D.size() > 0) {
-        auto [sub_bound, mini_S] = D.pull();
+    while ((long long)completed.size() < quota && queue.size() > 0) {
+        auto [child_bound, child_seeds] = queue.pull();
+        auto [next_bound, next_completed] = bmssp_rec(level - 1, child_bound, child_seeds);
 
-        auto [inner_bound, inner_complete] = bmssp_rec(level - 1, sub_bound, mini_S);
+        completed.insert(completed.end(), next_completed.begin(), next_completed.end());
 
-        complete.insert(complete.end(),
-                        inner_complete.begin(), inner_complete.end());
+        std::vector<Entry> postponed;
+        relax_from_completed_vertices(level,
+                                      B,
+                                      child_bound,
+                                      next_bound,
+                                      next_completed,
+                                      postponed,
+                                      queue);
 
-        std::vector<Entry> to_prepend;
-
-        for (int u : inner_complete) {
-            D.erase(u);
-            settled_level[u] = level;
-
-            for (const Edge& e : working_adj[u]) {
-                int v = e.to;
-                PathLabel relaxed = relaxed_label(u, v, e.weight);
-                if (relaxed <= label_of(v)) {
-                    relax(u, v, e.weight);
-                    PathLabel new_lbl = label_of(v);
-                    if (sub_bound <= new_lbl && new_lbl < B) {
-                        D.insert(v, new_lbl);
-                    } else if (inner_bound <= new_lbl && new_lbl < sub_bound) {
-                        to_prepend.push_back({ v, new_lbl });
-                    }
-                }
+        for (int x : child_seeds) {
+            if (next_bound <= label_of(x)) {
+                postponed.push_back({ x, label_of(x) });
             }
         }
 
-        for (int x : mini_S) {
-            if (inner_bound <= label_of(x))
-                to_prepend.push_back({ x, label_of(x) });
-        }
-
-        D.batch_prepend(to_prepend);
-        last_inner_bound = inner_bound;
+        queue.batch_prepend(postponed);
+        frontier_bound = next_bound;
     }
 
-    PathLabel return_bound = (D.size() == 0) ? B : last_inner_bound;
-
-    for (int x : W) {
+    PathLabel return_bound = (queue.size() == 0) ? B : frontier_bound;
+    for (int x : pivots.visited) {
         if (settled_level[x] != level && label_of(x) < return_bound) {
-            complete.push_back(x);
+            completed.push_back(x);
         }
     }
 
-    return { return_bound, complete };
+    return { return_bound, completed };
+}
+
+void Solver::relax_from_completed_vertices(int level,
+                                           PathLabel parent_bound,
+                                           PathLabel child_pull_bound,
+                                           PathLabel child_complete_bound,
+                                           const std::vector<int>& completed,
+                                           std::vector<Entry>& postponed,
+                                           BatchPQ& queue) {
+    for (int u : completed) {
+        queue.erase(u);
+        settled_level[u] = level;
+
+        for (const Edge& e : working_adj[u]) {
+            int v = e.to;
+            PathLabel candidate = relaxed_label(u, v, e.weight);
+            if (candidate <= label_of(v)) {
+                relax(u, v, e.weight);
+                PathLabel updated = label_of(v);
+                if (child_pull_bound <= updated && updated < parent_bound) {
+                    queue.insert(v, updated);
+                } else if (child_complete_bound <= updated && updated < child_pull_bound) {
+                    postponed.push_back({ v, updated });
+                }
+            }
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -459,11 +507,18 @@ std::vector<Weight> bmssp(const Graph& graph, Vertex source) {
 }
 
 Weight bmssp_single_target(const Graph& graph, Vertex source, Vertex target) {
+    if (target >= graph.size()) {
+        return std::numeric_limits<Weight>::infinity();
+    }
     auto distances = bmssp(graph, source);
     return distances[target];
 }
 
 std::vector<Vertex> bmssp_path(const Graph& graph, Vertex source, Vertex target) {
+    if (target >= graph.size()) {
+        return {};
+    }
+
     duan25::Solver solver(graph.size());
     
     // Add edges from the graph
