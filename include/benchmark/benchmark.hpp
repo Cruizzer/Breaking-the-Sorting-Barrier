@@ -4,11 +4,34 @@
 #include <vector>
 #include <functional>
 #include <chrono>
+#include <cstdint>
 
 namespace benchmark {
 
 // Algorithm function signature
 using AlgorithmFunc = std::function<std::vector<Weight>(const Graph&, Vertex)>;
+
+struct GraphTopologyStats {
+    size_t graph_size = 0;
+    size_t edge_count = 0;
+    double avg_degree = 0.0;
+    double degree_stddev = 0.0;
+    double degree_gini = 0.0;
+    size_t max_degree = 0;
+
+    size_t component_count = 0;
+    double giant_component_fraction = 0.0;
+
+    size_t directed_reachable_from_source = 0;
+    double source_reachable_fraction = 0.0;
+
+    double avg_distance_hops_unweighted = 0.0;
+    double approx_diameter_hops = 0.0;
+    double avg_clustering_coefficient = 0.0;
+
+    double edge_weight_mean = 0.0;
+    double edge_weight_stddev = 0.0;
+};
 
 // Benchmark result for a single run
 struct BenchmarkResult {
@@ -33,6 +56,30 @@ struct BenchmarkResult {
     
     // Memory usage (optional)
     size_t memory_bytes;
+
+    GraphTopologyStats topology;
+
+    // BMSSP telemetry (non-BMSSP runs remain zero)
+    uint64_t bmssp_calls_total = 0;
+    int bmssp_max_level = 0;
+    uint64_t bmssp_find_pivots_calls = 0;
+    double bmssp_mean_pivot_ratio = 0.0;
+    double bmssp_mean_frontier_expansion = 0.0;
+    uint64_t bmssp_pull_count = 0;
+    double bmssp_pull_mean_batch = 0.0;
+    uint64_t bmssp_queue_insert_count = 0;
+    uint64_t bmssp_queue_erase_count = 0;
+    uint64_t bmssp_queue_batchprepend_count = 0;
+
+    // Dijkstra operation counters (algorithm-specific)
+    uint64_t pq_push_count = 0;
+    uint64_t pq_pop_count = 0;
+    uint64_t pq_stale_pop_count = 0;
+    uint64_t pq_relax_attempt_count = 0;
+    uint64_t pq_relax_success_count = 0;
+    uint64_t fib_insert_count = 0;
+    uint64_t fib_extract_count = 0;
+    uint64_t fib_decrease_key_count = 0;
 };
 
 // Benchmark comparison result
@@ -80,6 +127,8 @@ ThreeWayComparisonResult compare_three_algorithms(
     const Graph& graph,
     Vertex source
 );
+
+GraphTopologyStats compute_graph_topology_stats(const Graph& graph, Vertex source);
 
 // Run multiple trials and average results
 BenchmarkResult run_multiple_trials(

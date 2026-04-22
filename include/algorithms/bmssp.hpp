@@ -62,6 +62,7 @@
 #include <cassert>
 #include <numeric>
 #include <stdexcept>
+#include <cstdint>
 
 #include "path_label.hpp"
 #include "batch_pq.hpp"
@@ -200,6 +201,24 @@ private:
 #include "graph.hpp"
 
 namespace algorithms {
+
+struct BMSSPTelemetry {
+    bool enabled = false;
+    uint64_t calls_total = 0;
+    int max_level = 0;
+    uint64_t find_pivots_calls = 0;
+    double pivot_ratio_sum = 0.0;
+    double frontier_expansion_sum = 0.0;
+    uint64_t pull_count = 0;
+    uint64_t pull_total_batch = 0;
+    uint64_t queue_insert_count = 0;
+    uint64_t queue_erase_count = 0;
+    uint64_t queue_batchprepend_count = 0;
+};
+
+void set_bmssp_telemetry_enabled(bool enabled);
+void reset_bmssp_telemetry();
+BMSSPTelemetry get_bmssp_telemetry();
 
 std::vector<Weight> bmssp(const Graph& graph, Vertex source);
 Weight bmssp_single_target(const Graph& graph, Vertex source, Vertex target);

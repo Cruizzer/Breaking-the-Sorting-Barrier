@@ -1,8 +1,25 @@
 #pragma once
 #include "graph.hpp"
 #include <vector>
+#include <cstdint>
 
 namespace algorithms {
+
+struct DijkstraTelemetry {
+	bool enabled = false;
+	uint64_t binary_push_count = 0;
+	uint64_t binary_pop_count = 0;
+	uint64_t binary_stale_pop_count = 0;
+	uint64_t relax_attempt_count = 0;
+	uint64_t relax_success_count = 0;
+	uint64_t fib_insert_count = 0;
+	uint64_t fib_extract_count = 0;
+	uint64_t fib_decrease_key_count = 0;
+};
+
+void set_dijkstra_telemetry_enabled(bool enabled);
+void reset_dijkstra_telemetry();
+DijkstraTelemetry get_dijkstra_telemetry();
 
 // Standard Dijkstra's algorithm implementation
 // Computes shortest paths from source to all other vertices

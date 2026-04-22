@@ -3,6 +3,12 @@
 
 #include "algorithms/bmssp.hpp"
 
+namespace {
+
+algorithms::BMSSPTelemetry g_bmssp_telemetry;
+
+} // namespace
+
 namespace duan25 {
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -260,6 +266,10 @@ Solver::find_pivots(PathLabel B, const std::vector<int>& S) {
 }
 
 Solver::PivotBatch Solver::discover_pivots(PathLabel B, const std::vector<int>& S) {
+    if (g_bmssp_telemetry.enabled) {
+        g_bmssp_telemetry.find_pivots_calls++;
+    }
+
     pivot_call_id++;
 
     std::vector<int> W;
@@ -298,6 +308,11 @@ Solver::PivotBatch Solver::discover_pivots(PathLabel B, const std::vector<int>& 
         }
 
         if ((int)W.size() > k * (int)S.size()) {
+            if (g_bmssp_telemetry.enabled && !S.empty()) {
+                g_bmssp_telemetry.pivot_ratio_sum += 1.0;
+                g_bmssp_telemetry.frontier_expansion_sum +=
+                    static_cast<double>(W.size()) / static_cast<double>(S.size());
+            }
             return { S, W };
         }
 
@@ -310,6 +325,13 @@ Solver::PivotBatch Solver::discover_pivots(PathLabel B, const std::vector<int>& 
         if (tree_size[u] >= k) P.push_back(u);
     }
     for (int u : W) tree_size[pivot_root[u]] = 0;
+
+    if (g_bmssp_telemetry.enabled && !S.empty()) {
+        g_bmssp_telemetry.pivot_ratio_sum +=
+            static_cast<double>(P.size()) / static_cast<double>(S.size());
+        g_bmssp_telemetry.frontier_expansion_sum +=
+            static_cast<double>(W.size()) / static_cast<double>(S.size());
+    }
 
     return { P, W };
 }
@@ -360,6 +382,11 @@ Solver::base_case(PathLabel B, int x) {
 
 std::pair<PathLabel, std::vector<int>>
 Solver::bmssp_rec(int level, PathLabel B, const std::vector<int>& S) {
+    if (g_bmssp_telemetry.enabled) {
+        g_bmssp_telemetry.calls_total++;
+        g_bmssp_telemetry.max_level = std::max(g_bmssp_telemetry.max_level, level);
+    }
+
     if (level == 0) return base_case(B, S[0]);
 
     LevelStep step = process_level(level, B, S);
@@ -374,6 +401,9 @@ Solver::LevelStep Solver::process_level(int level, PathLabel B, const std::vecto
     queue.initialise(batch_size, B);
 
     for (int p : pivots.pivots) queue.insert(p, label_of(p));
+    if (g_bmssp_telemetry.enabled) {
+        g_bmssp_telemetry.queue_insert_count += pivots.pivots.size();
+    }
 
     std::vector<int> completed;
     const long long quota = k * (1ll << (level * t));
@@ -381,6 +411,10 @@ Solver::LevelStep Solver::process_level(int level, PathLabel B, const std::vecto
 
     while ((long long)completed.size() < quota && queue.size() > 0) {
         auto [child_bound, child_seeds] = queue.pull();
+        if (g_bmssp_telemetry.enabled) {
+            g_bmssp_telemetry.pull_count++;
+            g_bmssp_telemetry.pull_total_batch += child_seeds.size();
+        }
         auto [next_bound, next_completed] = bmssp_rec(level - 1, child_bound, child_seeds);
 
         completed.insert(completed.end(), next_completed.begin(), next_completed.end());
@@ -401,6 +435,9 @@ Solver::LevelStep Solver::process_level(int level, PathLabel B, const std::vecto
         }
 
         queue.batch_prepend(postponed);
+        if (g_bmssp_telemetry.enabled) {
+            g_bmssp_telemetry.queue_batchprepend_count++;
+        }
         frontier_bound = next_bound;
     }
 
@@ -423,6 +460,9 @@ void Solver::relax_from_completed_vertices(int level,
                                            BatchPQ& queue) {
     for (int u : completed) {
         queue.erase(u);
+        if (g_bmssp_telemetry.enabled) {
+            g_bmssp_telemetry.queue_erase_count++;
+        }
         settled_level[u] = level;
 
         for (const Edge& e : working_adj[u]) {
@@ -433,6 +473,9 @@ void Solver::relax_from_completed_vertices(int level,
                 PathLabel updated = label_of(v);
                 if (child_pull_bound <= updated && updated < parent_bound) {
                     queue.insert(v, updated);
+                    if (g_bmssp_telemetry.enabled) {
+                        g_bmssp_telemetry.queue_insert_count++;
+                    }
                 } else if (child_complete_bound <= updated && updated < child_pull_bound) {
                     postponed.push_back({ v, updated });
                 }
@@ -479,6 +522,20 @@ std::pair<std::vector<double>, std::vector<int>> Solver::build_output() const {
 #include "graph.hpp"
 
 namespace algorithms {
+
+void set_bmssp_telemetry_enabled(bool enabled) {
+    g_bmssp_telemetry.enabled = enabled;
+}
+
+void reset_bmssp_telemetry() {
+    const bool enabled = g_bmssp_telemetry.enabled;
+    g_bmssp_telemetry = BMSSPTelemetry{};
+    g_bmssp_telemetry.enabled = enabled;
+}
+
+BMSSPTelemetry get_bmssp_telemetry() {
+    return g_bmssp_telemetry;
+}
 
 std::vector<Weight> bmssp(const Graph& graph, Vertex source) {
     duan25::Solver solver(graph.size());

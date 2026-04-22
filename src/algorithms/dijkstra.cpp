@@ -8,6 +8,26 @@ namespace algorithms {
 
 namespace {
 
+DijkstraTelemetry g_dijkstra_telemetry;
+
+} // namespace
+
+void set_dijkstra_telemetry_enabled(bool enabled) {
+    g_dijkstra_telemetry.enabled = enabled;
+}
+
+void reset_dijkstra_telemetry() {
+    const bool enabled = g_dijkstra_telemetry.enabled;
+    g_dijkstra_telemetry = DijkstraTelemetry{};
+    g_dijkstra_telemetry.enabled = enabled;
+}
+
+DijkstraTelemetry get_dijkstra_telemetry() {
+    return g_dijkstra_telemetry;
+}
+
+namespace {
+
 class FibonacciHeap {
 public:
     struct Node {
@@ -38,6 +58,9 @@ public:
         }
 
         ++size_;
+        if (g_dijkstra_telemetry.enabled) {
+            g_dijkstra_telemetry.fib_insert_count++;
+        }
         return node;
     }
 
@@ -75,6 +98,9 @@ public:
         }
 
         --size_;
+        if (g_dijkstra_telemetry.enabled) {
+            g_dijkstra_telemetry.fib_extract_count++;
+        }
         return {z->vertex, z->key};
     }
 
@@ -84,6 +110,9 @@ public:
         }
 
         x->key = new_key;
+        if (g_dijkstra_telemetry.enabled) {
+            g_dijkstra_telemetry.fib_decrease_key_count++;
+        }
         Node* y = x->parent;
 
         if (y && x->key < y->key) {
@@ -232,20 +261,38 @@ std::vector<Weight> dijkstra(const Graph& graph, Vertex source) {
     using PQElem = std::pair<Weight, Vertex>;
     std::priority_queue<PQElem, std::vector<PQElem>, std::greater<PQElem>> pq;
     pq.push({0.0, source});
+    if (g_dijkstra_telemetry.enabled) {
+        g_dijkstra_telemetry.binary_push_count++;
+    }
     
     while (!pq.empty()) {
         auto [d, u] = pq.top();
         pq.pop();
+        if (g_dijkstra_telemetry.enabled) {
+            g_dijkstra_telemetry.binary_pop_count++;
+        }
         
         // Skip if we've already found a better path
-        if (d > dist[u]) continue;
+        if (d > dist[u]) {
+            if (g_dijkstra_telemetry.enabled) {
+                g_dijkstra_telemetry.binary_stale_pop_count++;
+            }
+            continue;
+        }
         
         // Relax all outgoing edges
         for (const auto& edge : graph[u]) {
+            if (g_dijkstra_telemetry.enabled) {
+                g_dijkstra_telemetry.relax_attempt_count++;
+            }
             Weight new_dist = dist[u] + edge.weight;
             if (new_dist < dist[edge.to]) {
                 dist[edge.to] = new_dist;
                 pq.push({new_dist, edge.to});
+                if (g_dijkstra_telemetry.enabled) {
+                    g_dijkstra_telemetry.relax_success_count++;
+                    g_dijkstra_telemetry.binary_push_count++;
+                }
             }
         }
     }
@@ -378,6 +425,9 @@ std::vector<Weight> dijkstra_fibonacci(const Graph& graph, Vertex source) {
         }
 
         for (const auto& edge : graph[u]) {
+            if (g_dijkstra_telemetry.enabled) {
+                g_dijkstra_telemetry.relax_attempt_count++;
+            }
             Vertex v = edge.to;
             if (settled[v]) {
                 continue;
@@ -386,6 +436,9 @@ std::vector<Weight> dijkstra_fibonacci(const Graph& graph, Vertex source) {
             Weight new_dist = dist[u] + edge.weight;
             if (new_dist < dist[v]) {
                 dist[v] = new_dist;
+                if (g_dijkstra_telemetry.enabled) {
+                    g_dijkstra_telemetry.relax_success_count++;
+                }
                 if (!handles[v]) {
                     handles[v] = heap.insert(v, new_dist);
                 } else {

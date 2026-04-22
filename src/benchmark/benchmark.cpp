@@ -1,10 +1,14 @@
 #include "benchmark/benchmark.hpp"
+#include "algorithms/bmssp.hpp"
+#include "algorithms/dijkstra.hpp"
 #include <iostream>
 #include <iomanip>
 #include <fstream>
 #include <numeric>
 #include <cmath>
 #include <random>
+#include <queue>
+#include <unordered_set>
 
 namespace benchmark {
 
@@ -34,6 +38,207 @@ static bool distances_match(const std::vector<Weight>& a, const std::vector<Weig
     return true;
 }
 
+static std::vector<std::vector<size_t>> build_weak_adjacency(const Graph& graph) {
+    std::vector<std::vector<size_t>> weak_adj(graph.size());
+    for (size_t u = 0; u < graph.size(); ++u) {
+        for (const auto& e : graph[u]) {
+            weak_adj[u].push_back(e.to);
+            weak_adj[e.to].push_back(u);
+        }
+    }
+    return weak_adj;
+}
+
+static std::pair<size_t, int> bfs_farthest(const std::vector<std::vector<size_t>>& adj, size_t start) {
+    if (adj.empty()) return {0, 0};
+
+    std::vector<int> dist(adj.size(), -1);
+    std::queue<size_t> q;
+    q.push(start);
+    dist[start] = 0;
+
+    size_t farthest_vertex = start;
+    int farthest_dist = 0;
+
+    while (!q.empty()) {
+        size_t u = q.front();
+        q.pop();
+        if (dist[u] > farthest_dist) {
+            farthest_dist = dist[u];
+            farthest_vertex = u;
+        }
+        for (size_t v : adj[u]) {
+            if (dist[v] == -1) {
+                dist[v] = dist[u] + 1;
+                q.push(v);
+            }
+        }
+    }
+
+    return {farthest_vertex, farthest_dist};
+}
+
+GraphTopologyStats compute_graph_topology_stats(const Graph& graph, Vertex source) {
+    GraphTopologyStats stats;
+    stats.graph_size = graph.size();
+    stats.edge_count = count_edges(graph);
+
+    if (graph.empty()) {
+        return stats;
+    }
+
+    stats.avg_degree = static_cast<double>(stats.edge_count) / static_cast<double>(stats.graph_size);
+
+    std::vector<double> degrees(stats.graph_size, 0.0);
+    std::vector<double> edge_weights;
+    edge_weights.reserve(stats.edge_count);
+
+    for (size_t u = 0; u < graph.size(); ++u) {
+        degrees[u] = static_cast<double>(graph[u].size());
+        stats.max_degree = std::max(stats.max_degree, graph[u].size());
+        for (const auto& e : graph[u]) {
+            edge_weights.push_back(e.weight);
+        }
+    }
+
+    const double mean_degree = stats.avg_degree;
+    double degree_sq_sum = 0.0;
+    for (double d : degrees) {
+        const double delta = d - mean_degree;
+        degree_sq_sum += delta * delta;
+    }
+    stats.degree_stddev = std::sqrt(degree_sq_sum / static_cast<double>(degrees.size()));
+
+    double degree_sum = std::accumulate(degrees.begin(), degrees.end(), 0.0);
+    if (degree_sum > 0.0) {
+        std::vector<double> sorted_degrees = degrees;
+        std::sort(sorted_degrees.begin(), sorted_degrees.end());
+        double weighted = 0.0;
+        for (size_t i = 0; i < sorted_degrees.size(); ++i) {
+            weighted += static_cast<double>(i + 1) * sorted_degrees[i];
+        }
+        const double n = static_cast<double>(sorted_degrees.size());
+        stats.degree_gini = (2.0 * weighted) / (n * degree_sum) - (n + 1.0) / n;
+    }
+
+    if (!edge_weights.empty()) {
+        const double weight_sum = std::accumulate(edge_weights.begin(), edge_weights.end(), 0.0);
+        stats.edge_weight_mean = weight_sum / static_cast<double>(edge_weights.size());
+
+        double weight_sq_sum = 0.0;
+        for (double w : edge_weights) {
+            double delta = w - stats.edge_weight_mean;
+            weight_sq_sum += delta * delta;
+        }
+        stats.edge_weight_stddev = std::sqrt(weight_sq_sum / static_cast<double>(edge_weights.size()));
+    }
+
+    const auto weak_adj = build_weak_adjacency(graph);
+    {
+        std::vector<char> visited(graph.size(), 0);
+        size_t giant = 0;
+        for (size_t s = 0; s < graph.size(); ++s) {
+            if (visited[s]) continue;
+            stats.component_count++;
+            std::queue<size_t> q;
+            q.push(s);
+            visited[s] = 1;
+            size_t comp_size = 0;
+            while (!q.empty()) {
+                size_t u = q.front();
+                q.pop();
+                comp_size++;
+                for (size_t v : weak_adj[u]) {
+                    if (!visited[v]) {
+                        visited[v] = 1;
+                        q.push(v);
+                    }
+                }
+            }
+            giant = std::max(giant, comp_size);
+        }
+        stats.giant_component_fraction = static_cast<double>(giant) / static_cast<double>(graph.size());
+    }
+
+    if (source < graph.size()) {
+        std::vector<int> dist(graph.size(), -1);
+        std::queue<size_t> q;
+        q.push(source);
+        dist[source] = 0;
+        while (!q.empty()) {
+            size_t u = q.front();
+            q.pop();
+            for (const auto& e : graph[u]) {
+                size_t v = e.to;
+                if (dist[v] == -1) {
+                    dist[v] = dist[u] + 1;
+                    q.push(v);
+                }
+            }
+        }
+
+        double distance_sum = 0.0;
+        size_t reached = 0;
+        for (int d : dist) {
+            if (d >= 0) {
+                reached++;
+                distance_sum += d;
+            }
+        }
+        stats.directed_reachable_from_source = reached;
+        stats.source_reachable_fraction = static_cast<double>(reached) / static_cast<double>(graph.size());
+        stats.avg_distance_hops_unweighted = reached > 0 ? distance_sum / static_cast<double>(reached) : 0.0;
+    }
+
+    {
+        size_t start = 0;
+        while (start < graph.size() && weak_adj[start].empty()) start++;
+        if (start < graph.size()) {
+            auto [far_a, _] = bfs_farthest(weak_adj, start);
+            auto [far_b, diameter] = bfs_farthest(weak_adj, far_a);
+            (void)far_b;
+            stats.approx_diameter_hops = static_cast<double>(diameter);
+        }
+    }
+
+    {
+        std::vector<std::unordered_set<size_t>> nbr_set(graph.size());
+        for (size_t u = 0; u < graph.size(); ++u) {
+            nbr_set[u].reserve(graph[u].size() * 2 + 1);
+            for (const auto& e : graph[u]) {
+                if (e.to != u) {
+                    nbr_set[u].insert(e.to);
+                }
+            }
+        }
+
+        double local_sum = 0.0;
+        size_t considered = 0;
+        for (size_t u = 0; u < graph.size(); ++u) {
+            std::vector<size_t> nbrs(nbr_set[u].begin(), nbr_set[u].end());
+            const size_t k = nbrs.size();
+            if (k < 2) continue;
+
+            size_t links = 0;
+            for (size_t i = 0; i < k; ++i) {
+                for (size_t j = i + 1; j < k; ++j) {
+                    if (nbr_set[nbrs[i]].count(nbrs[j]) || nbr_set[nbrs[j]].count(nbrs[i])) {
+                        links++;
+                    }
+                }
+            }
+
+            const double possible = static_cast<double>(k) * static_cast<double>(k - 1) / 2.0;
+            local_sum += static_cast<double>(links) / possible;
+            considered++;
+        }
+
+        stats.avg_clustering_coefficient = considered > 0 ? local_sum / static_cast<double>(considered) : 0.0;
+    }
+
+    return stats;
+}
+
 BenchmarkResult run_benchmark(
     const std::string& algorithm_name,
     AlgorithmFunc algorithm,
@@ -46,6 +251,21 @@ BenchmarkResult run_benchmark(
     result.edge_count = count_edges(graph);
     result.avg_degree = graph.empty() ? 0.0 : static_cast<double>(result.edge_count) / graph.size();
     result.source_vertex = source;
+    result.topology = compute_graph_topology_stats(graph, source);
+
+    const bool is_bmssp = (algorithm_name == "BMSSP");
+    const bool is_dijkstra = (algorithm_name == "Dijkstra");
+    const bool is_dijkstra_fib = (algorithm_name == "Dijkstra Fibonacci");
+
+    algorithms::set_bmssp_telemetry_enabled(is_bmssp);
+    if (is_bmssp) {
+        algorithms::reset_bmssp_telemetry();
+    }
+
+    algorithms::set_dijkstra_telemetry_enabled(is_dijkstra || is_dijkstra_fib);
+    if (is_dijkstra || is_dijkstra_fib) {
+        algorithms::reset_dijkstra_telemetry();
+    }
     
     // Run algorithm and measure time
     auto start = std::chrono::high_resolution_clock::now();
@@ -75,6 +295,38 @@ BenchmarkResult run_benchmark(
     result.unreachable_vertices = graph.size() - result.reachable_vertices;
     result.avg_distance = result.reachable_vertices > 0 ? sum_distance / result.reachable_vertices : 0.0;
     result.memory_bytes = distances.size() * sizeof(Weight);
+
+    if (is_bmssp) {
+        auto telemetry = algorithms::get_bmssp_telemetry();
+        result.bmssp_calls_total = telemetry.calls_total;
+        result.bmssp_max_level = telemetry.max_level;
+        result.bmssp_find_pivots_calls = telemetry.find_pivots_calls;
+        if (telemetry.find_pivots_calls > 0) {
+            result.bmssp_mean_pivot_ratio = telemetry.pivot_ratio_sum /
+                                            static_cast<double>(telemetry.find_pivots_calls);
+            result.bmssp_mean_frontier_expansion = telemetry.frontier_expansion_sum /
+                                                   static_cast<double>(telemetry.find_pivots_calls);
+        }
+        result.bmssp_pull_count = telemetry.pull_count;
+        result.bmssp_pull_mean_batch = telemetry.pull_count > 0
+            ? static_cast<double>(telemetry.pull_total_batch) / static_cast<double>(telemetry.pull_count)
+            : 0.0;
+        result.bmssp_queue_insert_count = telemetry.queue_insert_count;
+        result.bmssp_queue_erase_count = telemetry.queue_erase_count;
+        result.bmssp_queue_batchprepend_count = telemetry.queue_batchprepend_count;
+    }
+
+    if (is_dijkstra || is_dijkstra_fib) {
+        auto telemetry = algorithms::get_dijkstra_telemetry();
+        result.pq_push_count = telemetry.binary_push_count;
+        result.pq_pop_count = telemetry.binary_pop_count;
+        result.pq_stale_pop_count = telemetry.binary_stale_pop_count;
+        result.pq_relax_attempt_count = telemetry.relax_attempt_count;
+        result.pq_relax_success_count = telemetry.relax_success_count;
+        result.fib_insert_count = telemetry.fib_insert_count;
+        result.fib_extract_count = telemetry.fib_extract_count;
+        result.fib_decrease_key_count = telemetry.fib_decrease_key_count;
+    }
     
     return result;
 }

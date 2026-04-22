@@ -13,7 +13,9 @@ Graph generate_random_graph(
     double avg_degree = 4.0,
     double min_weight = 1.0,
     double max_weight = 100.0,
-    unsigned seed = 42
+    unsigned seed = 42,
+    bool enforce_connected = false,
+    size_t max_retries = 20
 );
 
 // Generate an Erdős-Rényi random graph using the G(n, m) model.
@@ -27,7 +29,9 @@ Graph generate_erdos_renyi_graph(
     double avg_degree = 4.0,
     double min_weight = 1.0,
     double max_weight = 100.0,
-    unsigned seed = 42
+    unsigned seed = 42,
+    bool enforce_connected = false,
+    size_t max_retries = 20
 );
 
 // Generate a Barabási-Albert graph (preferential attachment).
@@ -41,7 +45,8 @@ Graph generate_barabasi_albert_graph(
     size_t m_attach = 2,
     double min_weight = 1.0,
     double max_weight = 100.0,
-    unsigned seed = 42
+    unsigned seed = 42,
+    size_t initial_clique_size = 0
 );
 
 // Generate a grid graph (common in pathfinding benchmarks)
@@ -58,5 +63,8 @@ Graph generate_road_network(
     size_t n,
     double min_weight = 10.0,
     double max_weight = 1000.0,
-    unsigned seed = 42
+    unsigned seed = 42,
+    double cross_edge_rate = 0.10,
+    size_t min_branch_factor = 1,
+    size_t max_branch_factor = 3
 );
