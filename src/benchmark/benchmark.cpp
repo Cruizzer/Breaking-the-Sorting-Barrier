@@ -275,6 +275,8 @@ BenchmarkResult run_benchmark(
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
     result.execution_time_us = duration.count();
     result.execution_time_ms = duration.count() / 1000.0;
+    result.total_time_us = result.execution_time_us;
+    result.total_time_ms = result.execution_time_ms;
     result.distances = distances;
     
     // Compute statistics
@@ -328,6 +330,44 @@ BenchmarkResult run_benchmark(
         result.fib_decrease_key_count = telemetry.fib_decrease_key_count;
     }
     
+    return result;
+}
+
+BenchmarkResult measure_bmssp_constant_degree_preparation(
+    const Graph& graph,
+    Vertex source,
+    bool apply_cd_transform
+) {
+    BenchmarkResult result;
+    result.algorithm_name = apply_cd_transform ? "BMSSP CD preparation" : "BMSSP preparation";
+    result.graph_size = graph.size();
+    result.edge_count = count_edges(graph);
+    result.avg_degree = graph.empty() ? 0.0 : static_cast<double>(result.edge_count) / graph.size();
+    result.source_vertex = source;
+    result.topology = compute_graph_topology_stats(graph, source);
+
+    algorithms::set_bmssp_telemetry_enabled(false);
+    algorithms::reset_bmssp_telemetry();
+
+    duan25::Solver solver(static_cast<int>(graph.size()));
+    for (std::size_t u = 0; u < graph.size(); ++u) {
+        for (const auto& e : graph[u]) {
+            solver.add_edge(static_cast<int>(u), static_cast<int>(e.to), e.weight);
+        }
+    }
+
+    auto start = std::chrono::high_resolution_clock::now();
+    solver.prepare_graph(apply_cd_transform);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    result.preparation_time_us = duration.count();
+    result.preparation_time_ms = duration.count() / 1000.0;
+    result.total_time_us = result.preparation_time_us;
+    result.total_time_ms = result.preparation_time_ms;
+    result.internal_graph_vertices = solver.working_vertex_count();
+    result.internal_graph_edges = solver.working_edge_count();
+
     return result;
 }
 

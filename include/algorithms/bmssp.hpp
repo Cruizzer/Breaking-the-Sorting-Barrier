@@ -101,6 +101,11 @@ public:
     // vertex id.  Unreachable vertices have distance INF.
     std::pair<std::vector<double>, std::vector<int>> execute(int source);
 
+    // Internal graph size after prepare_graph(); useful for measuring the
+    // constant-degree transformation overhead.
+    std::size_t working_vertex_count() const;
+    std::size_t working_edge_count() const;
+
     // Given the predecessor array returned by execute(), reconstruct the
     // shortest path from the source to `target` as a sequence of real vertex ids.
     // Returns {} if target is unreachable.

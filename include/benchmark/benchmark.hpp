@@ -42,8 +42,12 @@ struct BenchmarkResult {
     Vertex source_vertex;
     
     // Timing results (in microseconds)
-    double execution_time_us;
-    double execution_time_ms;
+    double preparation_time_us = 0.0;
+    double preparation_time_ms = 0.0;
+    double execution_time_us = 0.0;
+    double execution_time_ms = 0.0;
+    double total_time_us = 0.0;
+    double total_time_ms = 0.0;
 
     // Final distance vector produced by the algorithm
     std::vector<Weight> distances;
@@ -56,6 +60,10 @@ struct BenchmarkResult {
     
     // Memory usage (optional)
     size_t memory_bytes;
+
+    // Optional internal graph statistics for transformed BMSSP runs.
+    size_t internal_graph_vertices = 0;
+    size_t internal_graph_edges = 0;
 
     GraphTopologyStats topology;
 
@@ -129,6 +137,13 @@ ThreeWayComparisonResult compare_three_algorithms(
 );
 
 GraphTopologyStats compute_graph_topology_stats(const Graph& graph, Vertex source);
+
+// Measure the BMSSP constant-degree preparation step separately from execute().
+BenchmarkResult measure_bmssp_constant_degree_preparation(
+    const Graph& graph,
+    Vertex source,
+    bool apply_cd_transform = true
+);
 
 // Run multiple trials and average results
 BenchmarkResult run_multiple_trials(

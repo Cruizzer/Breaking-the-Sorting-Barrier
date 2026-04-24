@@ -69,6 +69,18 @@ std::pair<std::vector<double>, std::vector<int>> Solver::execute(int source) {
     return build_output();
 }
 
+std::size_t Solver::working_vertex_count() const {
+    return working_adj.size();
+}
+
+std::size_t Solver::working_edge_count() const {
+    std::size_t total = 0;
+    for (const auto& adj : working_adj) {
+        total += adj.size();
+    }
+    return total;
+}
+
 std::vector<int> Solver::reconstruct_path(int target,
                                           const std::vector<int>& real_pred) const {
     if (target < 0 || target >= num_real_vertices) return {};

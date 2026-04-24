@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
     size_t trials = 3;
 
     const unsigned generator_seed = 42;
-    const bool enforce_connected = false;
+    const bool enforce_connected = true;
     const size_t generator_max_retries = 20;
     const size_t ba_initial_clique = 0;
     const double road_cross_edge_rate = 0.10;
@@ -34,6 +34,8 @@ int main(int argc, char** argv) {
         << "graph_component_count,graph_giant_component_fraction,graph_source_reachable_fraction,"
         << "graph_avg_distance_hops_unweighted,graph_approx_diameter_hops,graph_avg_clustering_coefficient,"
         << "graph_edge_weight_mean,graph_edge_weight_stddev,"
+        << "bmssp_id_prep_ms,bmssp_cd_prep_ms,bmssp_cd_internal_vertices,bmssp_cd_internal_edges,"
+        << "bmssp_cd_vertex_blowup,bmssp_cd_edge_blowup,bmssp_cd_vs_identity_ratio,"
         << "binpq_push_count,binpq_pop_count,binpq_stale_pop_count,"
         << "binpq_relax_attempt_count,binpq_relax_success_count,"
         << "fib_insert_count,fib_extract_count,fib_decrease_key_count,"
@@ -68,6 +70,13 @@ int main(int argc, char** argv) {
         double total_graph_avg_clustering_coefficient = 0.0;
         double total_graph_edge_weight_mean = 0.0;
         double total_graph_edge_weight_stddev = 0.0;
+        double total_graph_vertex_count = 0.0;
+        double total_graph_edge_count = 0.0;
+
+        double total_bmssp_id_prep_ms = 0.0;
+        double total_bmssp_cd_prep_ms = 0.0;
+        double total_bmssp_cd_internal_vertices = 0.0;
+        double total_bmssp_cd_internal_edges = 0.0;
 
         double total_binpq_push_count = 0.0;
         double total_binpq_pop_count = 0.0;
@@ -94,12 +103,16 @@ int main(int argc, char** argv) {
 
         for (size_t t = 0; t < trials; ++t) {
             Graph g;
+            unsigned trial_seed = generator_seed
+                + static_cast<unsigned>(t)
+                + static_cast<unsigned>(N * 13)
+                + static_cast<unsigned>(param * 97);
             if (type == "random") {
                 g = generate_random_graph(N,
                                           param,
                                           1.0,
                                           100.0,
-                                          generator_seed,
+                                          trial_seed,
                                           enforce_connected,
                                           generator_max_retries);
             } else if (type == "erdos_renyi") {
@@ -107,7 +120,7 @@ int main(int argc, char** argv) {
                                                param,
                                                1.0,
                                                100.0,
-                                               generator_seed,
+                                               trial_seed,
                                                enforce_connected,
                                                generator_max_retries);
             } else if (type == "barabasi_albert") {
@@ -116,7 +129,7 @@ int main(int argc, char** argv) {
                                                    m_attach,
                                                    1.0,
                                                    100.0,
-                                                   generator_seed,
+                                                   trial_seed,
                                                    ba_initial_clique);
             } else if (type == "grid") {
                 size_t side = std::max<size_t>(1, (size_t)std::sqrt((double)N));
@@ -125,13 +138,13 @@ int main(int argc, char** argv) {
                 g = generate_road_network(N,
                                           10.0,
                                           1000.0,
-                                          generator_seed,
+                                          trial_seed,
                                           road_cross_edge_rate,
                                           road_branch_min,
                                           road_branch_max);
             }
 
-            Vertex source = (t * 1234567) % g.size();
+            Vertex source = ((t + 1) * 1234567 + N + static_cast<size_t>(param)) % g.size();
 
             auto comp = benchmark::compare_three_algorithms(
                 algorithms::dijkstra,
@@ -167,6 +180,16 @@ int main(int argc, char** argv) {
             total_graph_avg_clustering_coefficient += topo.avg_clustering_coefficient;
             total_graph_edge_weight_mean += topo.edge_weight_mean;
             total_graph_edge_weight_stddev += topo.edge_weight_stddev;
+            total_graph_vertex_count += static_cast<double>(comp.dijkstra_result.graph_size);
+            total_graph_edge_count += static_cast<double>(comp.dijkstra_result.edge_count);
+
+            auto id_prep = benchmark::measure_bmssp_constant_degree_preparation(g, source, false);
+            total_bmssp_id_prep_ms += id_prep.preparation_time_ms;
+
+            auto cd_prep = benchmark::measure_bmssp_constant_degree_preparation(g, source, true);
+            total_bmssp_cd_prep_ms += cd_prep.preparation_time_ms;
+            total_bmssp_cd_internal_vertices += static_cast<double>(cd_prep.internal_graph_vertices);
+            total_bmssp_cd_internal_edges += static_cast<double>(cd_prep.internal_graph_edges);
 
             total_binpq_push_count += static_cast<double>(comp.dijkstra_result.pq_push_count);
             total_binpq_pop_count += static_cast<double>(comp.dijkstra_result.pq_pop_count);
@@ -214,6 +237,22 @@ int main(int argc, char** argv) {
         double avg_graph_avg_clustering_coefficient = total_graph_avg_clustering_coefficient / trials;
         double avg_graph_edge_weight_mean = total_graph_edge_weight_mean / trials;
         double avg_graph_edge_weight_stddev = total_graph_edge_weight_stddev / trials;
+        double avg_graph_vertex_count = total_graph_vertex_count / trials;
+        double avg_graph_edge_count = total_graph_edge_count / trials;
+
+        double avg_bmssp_id_prep_ms = total_bmssp_id_prep_ms / trials;
+        double avg_bmssp_cd_prep_ms = total_bmssp_cd_prep_ms / trials;
+        double avg_bmssp_cd_internal_vertices = total_bmssp_cd_internal_vertices / trials;
+        double avg_bmssp_cd_internal_edges = total_bmssp_cd_internal_edges / trials;
+        double avg_bmssp_cd_vertex_blowup = avg_graph_vertex_count > 0.0
+            ? avg_bmssp_cd_internal_vertices / avg_graph_vertex_count
+            : 0.0;
+        double avg_bmssp_cd_edge_blowup = avg_graph_edge_count > 0.0
+            ? avg_bmssp_cd_internal_edges / avg_graph_edge_count
+            : 0.0;
+        double avg_bmssp_cd_vs_identity_ratio = avg_bmssp_id_prep_ms > 0.0
+            ? avg_bmssp_cd_prep_ms / avg_bmssp_id_prep_ms
+            : 0.0;
 
         double avg_binpq_push_count = total_binpq_push_count / trials;
         double avg_binpq_pop_count = total_binpq_pop_count / trials;
@@ -266,6 +305,13 @@ int main(int argc, char** argv) {
             << avg_graph_avg_clustering_coefficient << ","
             << avg_graph_edge_weight_mean << ","
             << avg_graph_edge_weight_stddev << ","
+            << avg_bmssp_id_prep_ms << ","
+            << avg_bmssp_cd_prep_ms << ","
+            << avg_bmssp_cd_internal_vertices << ","
+            << avg_bmssp_cd_internal_edges << ","
+            << avg_bmssp_cd_vertex_blowup << ","
+            << avg_bmssp_cd_edge_blowup << ","
+            << avg_bmssp_cd_vs_identity_ratio << ","
             << avg_binpq_push_count << ","
             << avg_binpq_pop_count << ","
             << avg_binpq_stale_pop_count << ","
