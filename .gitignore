@@ -2,4 +2,3 @@
 /build*
 ./external/libosmium/build*
 all_sources/
-TODO.md
