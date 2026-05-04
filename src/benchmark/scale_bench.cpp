@@ -7,14 +7,162 @@
 #include <fstream>
 #include <vector>
 #include <cmath>
+#include <array>
+#include <algorithm>
+#include <numeric>
+#include <random>
+#include <string>
+#include <sstream>
+
+namespace {
+
+double mean_of(const std::vector<double>& values) {
+    if (values.empty()) return 0.0;
+    const double sum = std::accumulate(values.begin(), values.end(), 0.0);
+    return sum / static_cast<double>(values.size());
+}
+
+double median_of(std::vector<double> values) {
+    if (values.empty()) return 0.0;
+    std::sort(values.begin(), values.end());
+    const size_t n = values.size();
+    if ((n % 2) == 1) return values[n / 2];
+    return 0.5 * (values[(n / 2) - 1] + values[n / 2]);
+}
+
+double stddev_of(const std::vector<double>& values) {
+    if (values.size() <= 1) return 0.0;
+    const double m = mean_of(values);
+    double acc = 0.0;
+    for (double x : values) {
+        const double d = x - m;
+        acc += d * d;
+    }
+    return std::sqrt(acc / static_cast<double>(values.size() - 1));
+}
+
+double p95_of(std::vector<double> values) {
+    if (values.empty()) return 0.0;
+    std::sort(values.begin(), values.end());
+    const size_t idx = static_cast<size_t>(std::ceil(0.95 * static_cast<double>(values.size()))) - 1;
+    return values[std::min(idx, values.size() - 1)];
+}
+
+bool distances_match_rel_abs(const std::vector<Weight>& a, const std::vector<Weight>& b) {
+    if (a.size() != b.size()) return false;
+    const double abs_tol = 1e-6;
+    const double rel_tol = 1e-9;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (std::isinf(a[i]) && std::isinf(b[i])) continue;
+        const double scale = std::max(std::abs(a[i]), std::abs(b[i]));
+        const double tol = abs_tol + rel_tol * scale;
+        if (std::abs(a[i] - b[i]) > tol) return false;
+    }
+    return true;
+}
+
+} // namespace
 
 int main(int argc, char** argv) {
-    (void)argc;
-    (void)argv;
-
     std::vector<size_t> sizes = {1000, 5000, 10000, 50000};
     std::vector<int> degrees = {4, 8};
-    size_t trials = 3;
+    size_t trials = 10;
+    size_t warmup_runs = 1;
+    std::string scale_profile = "baseline";
+
+    bool sizes_overridden = false;
+    bool trials_overridden = false;
+    bool warmup_overridden = false;
+
+    auto parse_sizes_csv = [](const std::string& csv) {
+        std::vector<size_t> parsed;
+        std::stringstream ss(csv);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+            if (!token.empty()) {
+                parsed.push_back(static_cast<size_t>(std::stoull(token)));
+            }
+        }
+        return parsed;
+    };
+
+    for (int i = 1; i < argc; ++i) {
+        std::string arg(argv[i]);
+
+        if (arg == "--help" || arg == "-h") {
+            std::cout << "Usage: scale_bench [options]\n"
+                      << "  --scale baseline|large|xlarge\n"
+                      << "  --sizes N1,N2,...\n"
+                      << "  --trials N\n"
+                      << "  --warmup N\n";
+            return 0;
+        }
+
+        if (arg.rfind("--scale=", 0) == 0) {
+            scale_profile = arg.substr(std::string("--scale=").size());
+            continue;
+        }
+        if (arg == "--scale" && i + 1 < argc) {
+            scale_profile = std::string(argv[++i]);
+            continue;
+        }
+
+        if (arg.rfind("--sizes=", 0) == 0) {
+            sizes = parse_sizes_csv(arg.substr(std::string("--sizes=").size()));
+            sizes_overridden = !sizes.empty();
+            continue;
+        }
+        if (arg == "--sizes" && i + 1 < argc) {
+            sizes = parse_sizes_csv(std::string(argv[++i]));
+            sizes_overridden = !sizes.empty();
+            continue;
+        }
+
+        if (arg.rfind("--trials=", 0) == 0) {
+            trials = static_cast<size_t>(std::stoull(arg.substr(std::string("--trials=").size())));
+            trials_overridden = true;
+            continue;
+        }
+        if (arg == "--trials" && i + 1 < argc) {
+            trials = static_cast<size_t>(std::stoull(std::string(argv[++i])));
+            trials_overridden = true;
+            continue;
+        }
+
+        if (arg.rfind("--warmup=", 0) == 0) {
+            warmup_runs = static_cast<size_t>(std::stoull(arg.substr(std::string("--warmup=").size())));
+            warmup_overridden = true;
+            continue;
+        }
+        if (arg == "--warmup" && i + 1 < argc) {
+            warmup_runs = static_cast<size_t>(std::stoull(std::string(argv[++i])));
+            warmup_overridden = true;
+            continue;
+        }
+    }
+
+    if (!sizes_overridden) {
+        if (scale_profile == "large") {
+            sizes = {100000, 250000, 500000, 1000000};
+            if (!trials_overridden) trials = 5;
+            if (!warmup_overridden) warmup_runs = 1;
+        } else if (scale_profile == "xlarge") {
+            sizes = {200000, 500000, 1000000, 2000000};
+            if (!trials_overridden) trials = 3;
+            if (!warmup_overridden) warmup_runs = 1;
+        }
+    }
+
+    if (sizes.empty()) {
+        std::cerr << "No sizes configured. Use --sizes N1,N2,...\n";
+        return 1;
+    }
+
+    std::cout << "Scale profile: " << scale_profile << " | sizes=";
+    for (size_t i = 0; i < sizes.size(); ++i) {
+        std::cout << sizes[i] << (i + 1 < sizes.size() ? "," : "");
+    }
+    std::cout << " | trials=" << trials << " | warmup=" << warmup_runs << "\n";
 
     const unsigned generator_seed = 42;
     const bool enforce_connected = true;
@@ -42,7 +190,13 @@ int main(int argc, char** argv) {
         << "fib_relax_attempt_count,fib_relax_success_count,"
         << "bmssp_calls_total,bmssp_max_level,bmssp_find_pivots_calls,"
         << "bmssp_mean_pivot_ratio,bmssp_mean_frontier_expansion,bmssp_pull_count,"
-        << "bmssp_pull_mean_batch,bmssp_queue_insert_count,bmssp_queue_erase_count,bmssp_queue_batchprepend_count\n";
+        << "bmssp_pull_mean_batch,bmssp_queue_insert_count,bmssp_queue_erase_count,bmssp_queue_batchprepend_count,"
+        << "warmup_runs,order_randomized,"
+        << "dijkstra_median_ms,dijkstra_std_ms,dijkstra_p95_ms,"
+        << "dijkstra_fib_median_ms,dijkstra_fib_std_ms,dijkstra_fib_p95_ms,"
+        << "bmssp_median_ms,bmssp_std_ms,bmssp_p95_ms,"
+        << "bmssp_total_with_cd_ms,bmssp_total_with_cd_median_ms,bmssp_total_with_cd_std_ms,bmssp_total_with_cd_p95_ms,"
+        << "match_count_binary_fib,match_count_binary_bmssp,match_count_fib_bmssp\n";
 
     auto run_one = [&](const std::string& type, size_t N, int param){
         double total_d_ms = 0.0;
@@ -101,6 +255,15 @@ int main(int argc, char** argv) {
         double total_bmssp_queue_erase_count = 0.0;
         double total_bmssp_queue_batchprepend_count = 0.0;
 
+        std::vector<double> dijkstra_times_ms;
+        std::vector<double> dijkstra_fib_times_ms;
+        std::vector<double> bmssp_times_ms;
+        std::vector<double> bmssp_total_with_cd_times_ms;
+        dijkstra_times_ms.reserve(trials);
+        dijkstra_fib_times_ms.reserve(trials);
+        bmssp_times_ms.reserve(trials);
+        bmssp_total_with_cd_times_ms.reserve(trials);
+
         for (size_t t = 0; t < trials; ++t) {
             Graph g;
             unsigned trial_seed = generator_seed
@@ -146,28 +309,59 @@ int main(int argc, char** argv) {
 
             Vertex source = ((t + 1) * 1234567 + N + static_cast<size_t>(param)) % g.size();
 
-            auto comp = benchmark::compare_three_algorithms(
-                algorithms::dijkstra,
-                algorithms::dijkstra_fibonacci,
-                algorithms::bmssp,
-                g,
-                source
-            );
+            enum AlgIndex : int { BIN = 0, FIB = 1, BMSSP = 2 };
+            std::array<int, 3> order = {BIN, FIB, BMSSP};
+            std::mt19937 order_rng(trial_seed ^ 0x9e3779b9U);
 
-            total_d_ms += comp.dijkstra_result.execution_time_ms;
-            total_fib_ms += comp.dijkstra_fibonacci_result.execution_time_ms;
-            total_b_ms += comp.bmssp_result.execution_time_ms;
-            total_speedup_binary += comp.bmssp_speedup_vs_dijkstra;
-            total_speedup_fib += comp.bmssp_speedup_vs_dijkstra_fibonacci;
-            total_fib_vs_binary += comp.dijkstra_fibonacci_speedup_vs_dijkstra;
-            total_reachable += comp.dijkstra_result.reachable_vertices;
-            total_avgdist += comp.dijkstra_result.avg_distance;
-            total_maxdist += comp.dijkstra_result.max_distance;
-            total_match_binary_fib += comp.dijkstra_and_fibonacci_match ? 1 : 0;
-            total_match_binary_bmssp += comp.dijkstra_and_bmssp_match ? 1 : 0;
-            total_match_fib_bmssp += comp.dijkstra_fibonacci_and_bmssp_match ? 1 : 0;
+            auto run_index = [&](int index) {
+                if (index == BIN) {
+                    return benchmark::run_benchmark("Dijkstra", algorithms::dijkstra, g, source);
+                }
+                if (index == FIB) {
+                    return benchmark::run_benchmark("Dijkstra Fibonacci", algorithms::dijkstra_fibonacci, g, source);
+                }
+                return benchmark::run_benchmark("BMSSP", algorithms::bmssp, g, source);
+            };
 
-            const auto& topo = comp.dijkstra_result.topology;
+            for (size_t w = 0; w < warmup_runs; ++w) {
+                std::shuffle(order.begin(), order.end(), order_rng);
+                for (int idx : order) {
+                    (void)run_index(idx);
+                }
+            }
+
+            std::array<benchmark::BenchmarkResult, 3> results;
+            std::shuffle(order.begin(), order.end(), order_rng);
+            for (int idx : order) {
+                results[static_cast<size_t>(idx)] = run_index(idx);
+            }
+
+            const auto& dijkstra_result = results[BIN];
+            const auto& dijkstra_fib_result = results[FIB];
+            const auto& bmssp_result = results[BMSSP];
+
+            const bool match_binary_fib = distances_match_rel_abs(dijkstra_result.distances, dijkstra_fib_result.distances);
+            const bool match_binary_bmssp = distances_match_rel_abs(dijkstra_result.distances, bmssp_result.distances);
+            const bool match_fib_bmssp = distances_match_rel_abs(dijkstra_fib_result.distances, bmssp_result.distances);
+
+            total_d_ms += dijkstra_result.execution_time_ms;
+            total_fib_ms += dijkstra_fib_result.execution_time_ms;
+            total_b_ms += bmssp_result.execution_time_ms;
+            total_speedup_binary += dijkstra_result.execution_time_us / bmssp_result.execution_time_us;
+            total_speedup_fib += dijkstra_fib_result.execution_time_us / bmssp_result.execution_time_us;
+            total_fib_vs_binary += dijkstra_result.execution_time_us / dijkstra_fib_result.execution_time_us;
+            total_reachable += dijkstra_result.reachable_vertices;
+            total_avgdist += dijkstra_result.avg_distance;
+            total_maxdist += dijkstra_result.max_distance;
+            total_match_binary_fib += match_binary_fib ? 1 : 0;
+            total_match_binary_bmssp += match_binary_bmssp ? 1 : 0;
+            total_match_fib_bmssp += match_fib_bmssp ? 1 : 0;
+
+            dijkstra_times_ms.push_back(dijkstra_result.execution_time_ms);
+            dijkstra_fib_times_ms.push_back(dijkstra_fib_result.execution_time_ms);
+            bmssp_times_ms.push_back(bmssp_result.execution_time_ms);
+
+            const auto& topo = dijkstra_result.topology;
             total_graph_avg_degree += topo.avg_degree;
             total_graph_degree_stddev += topo.degree_stddev;
             total_graph_degree_gini += topo.degree_gini;
@@ -180,8 +374,8 @@ int main(int argc, char** argv) {
             total_graph_avg_clustering_coefficient += topo.avg_clustering_coefficient;
             total_graph_edge_weight_mean += topo.edge_weight_mean;
             total_graph_edge_weight_stddev += topo.edge_weight_stddev;
-            total_graph_vertex_count += static_cast<double>(comp.dijkstra_result.graph_size);
-            total_graph_edge_count += static_cast<double>(comp.dijkstra_result.edge_count);
+            total_graph_vertex_count += static_cast<double>(dijkstra_result.graph_size);
+            total_graph_edge_count += static_cast<double>(dijkstra_result.edge_count);
 
             auto id_prep = benchmark::measure_bmssp_constant_degree_preparation(g, source, false);
             total_bmssp_id_prep_ms += id_prep.preparation_time_ms;
@@ -190,29 +384,30 @@ int main(int argc, char** argv) {
             total_bmssp_cd_prep_ms += cd_prep.preparation_time_ms;
             total_bmssp_cd_internal_vertices += static_cast<double>(cd_prep.internal_graph_vertices);
             total_bmssp_cd_internal_edges += static_cast<double>(cd_prep.internal_graph_edges);
+            bmssp_total_with_cd_times_ms.push_back(bmssp_result.execution_time_ms + cd_prep.preparation_time_ms);
 
-            total_binpq_push_count += static_cast<double>(comp.dijkstra_result.pq_push_count);
-            total_binpq_pop_count += static_cast<double>(comp.dijkstra_result.pq_pop_count);
-            total_binpq_stale_pop_count += static_cast<double>(comp.dijkstra_result.pq_stale_pop_count);
-            total_binpq_relax_attempt_count += static_cast<double>(comp.dijkstra_result.pq_relax_attempt_count);
-            total_binpq_relax_success_count += static_cast<double>(comp.dijkstra_result.pq_relax_success_count);
+            total_binpq_push_count += static_cast<double>(dijkstra_result.pq_push_count);
+            total_binpq_pop_count += static_cast<double>(dijkstra_result.pq_pop_count);
+            total_binpq_stale_pop_count += static_cast<double>(dijkstra_result.pq_stale_pop_count);
+            total_binpq_relax_attempt_count += static_cast<double>(dijkstra_result.pq_relax_attempt_count);
+            total_binpq_relax_success_count += static_cast<double>(dijkstra_result.pq_relax_success_count);
 
-            total_fib_insert_count += static_cast<double>(comp.dijkstra_fibonacci_result.fib_insert_count);
-            total_fib_extract_count += static_cast<double>(comp.dijkstra_fibonacci_result.fib_extract_count);
-            total_fib_decrease_key_count += static_cast<double>(comp.dijkstra_fibonacci_result.fib_decrease_key_count);
-            total_fib_relax_attempt_count += static_cast<double>(comp.dijkstra_fibonacci_result.pq_relax_attempt_count);
-            total_fib_relax_success_count += static_cast<double>(comp.dijkstra_fibonacci_result.pq_relax_success_count);
+            total_fib_insert_count += static_cast<double>(dijkstra_fib_result.fib_insert_count);
+            total_fib_extract_count += static_cast<double>(dijkstra_fib_result.fib_extract_count);
+            total_fib_decrease_key_count += static_cast<double>(dijkstra_fib_result.fib_decrease_key_count);
+            total_fib_relax_attempt_count += static_cast<double>(dijkstra_fib_result.pq_relax_attempt_count);
+            total_fib_relax_success_count += static_cast<double>(dijkstra_fib_result.pq_relax_success_count);
 
-            total_bmssp_calls_total += static_cast<double>(comp.bmssp_result.bmssp_calls_total);
-            total_bmssp_max_level += static_cast<double>(comp.bmssp_result.bmssp_max_level);
-            total_bmssp_find_pivots_calls += static_cast<double>(comp.bmssp_result.bmssp_find_pivots_calls);
-            total_bmssp_mean_pivot_ratio += comp.bmssp_result.bmssp_mean_pivot_ratio;
-            total_bmssp_mean_frontier_expansion += comp.bmssp_result.bmssp_mean_frontier_expansion;
-            total_bmssp_pull_count += static_cast<double>(comp.bmssp_result.bmssp_pull_count);
-            total_bmssp_pull_mean_batch += comp.bmssp_result.bmssp_pull_mean_batch;
-            total_bmssp_queue_insert_count += static_cast<double>(comp.bmssp_result.bmssp_queue_insert_count);
-            total_bmssp_queue_erase_count += static_cast<double>(comp.bmssp_result.bmssp_queue_erase_count);
-            total_bmssp_queue_batchprepend_count += static_cast<double>(comp.bmssp_result.bmssp_queue_batchprepend_count);
+            total_bmssp_calls_total += static_cast<double>(bmssp_result.bmssp_calls_total);
+            total_bmssp_max_level += static_cast<double>(bmssp_result.bmssp_max_level);
+            total_bmssp_find_pivots_calls += static_cast<double>(bmssp_result.bmssp_find_pivots_calls);
+            total_bmssp_mean_pivot_ratio += bmssp_result.bmssp_mean_pivot_ratio;
+            total_bmssp_mean_frontier_expansion += bmssp_result.bmssp_mean_frontier_expansion;
+            total_bmssp_pull_count += static_cast<double>(bmssp_result.bmssp_pull_count);
+            total_bmssp_pull_mean_batch += bmssp_result.bmssp_pull_mean_batch;
+            total_bmssp_queue_insert_count += static_cast<double>(bmssp_result.bmssp_queue_insert_count);
+            total_bmssp_queue_erase_count += static_cast<double>(bmssp_result.bmssp_queue_erase_count);
+            total_bmssp_queue_batchprepend_count += static_cast<double>(bmssp_result.bmssp_queue_batchprepend_count);
         }
 
         double avg_d = total_d_ms / trials;
@@ -277,6 +472,23 @@ int main(int argc, char** argv) {
         double avg_bmssp_queue_erase_count = total_bmssp_queue_erase_count / trials;
         double avg_bmssp_queue_batchprepend_count = total_bmssp_queue_batchprepend_count / trials;
 
+        const double median_d = median_of(dijkstra_times_ms);
+        const double std_d = stddev_of(dijkstra_times_ms);
+        const double p95_d = p95_of(dijkstra_times_ms);
+
+        const double median_f = median_of(dijkstra_fib_times_ms);
+        const double std_f = stddev_of(dijkstra_fib_times_ms);
+        const double p95_f = p95_of(dijkstra_fib_times_ms);
+
+        const double median_b = median_of(bmssp_times_ms);
+        const double std_b = stddev_of(bmssp_times_ms);
+        const double p95_b = p95_of(bmssp_times_ms);
+
+        const double avg_b_total_cd = mean_of(bmssp_total_with_cd_times_ms);
+        const double median_b_total_cd = median_of(bmssp_total_with_cd_times_ms);
+        const double std_b_total_cd = stddev_of(bmssp_total_with_cd_times_ms);
+        const double p95_b_total_cd = p95_of(bmssp_total_with_cd_times_ms);
+
         out << "2" << ","
             << type << "," << N << "," << param << "," << trials << ","
             << generator_seed << ","
@@ -331,10 +543,21 @@ int main(int argc, char** argv) {
             << avg_bmssp_pull_mean_batch << ","
             << avg_bmssp_queue_insert_count << ","
             << avg_bmssp_queue_erase_count << ","
-            << avg_bmssp_queue_batchprepend_count << "\n";
+            << avg_bmssp_queue_batchprepend_count << ","
+            << warmup_runs << ","
+            << "1" << ","
+            << median_d << "," << std_d << "," << p95_d << ","
+            << median_f << "," << std_f << "," << p95_f << ","
+            << median_b << "," << std_b << "," << p95_b << ","
+            << avg_b_total_cd << "," << median_b_total_cd << "," << std_b_total_cd << "," << p95_b_total_cd << ","
+            << total_match_binary_fib << ","
+            << total_match_binary_bmssp << ","
+            << total_match_fib_bmssp << "\n";
 
         std::cout << "Completed: " << type << " N=" << N << " param=" << param
-                  << " -> d=" << avg_d << " ms, fib=" << avg_fib << " ms, b=" << avg_b << " ms\n";
+                  << " -> d(avg/med)=" << avg_d << "/" << median_d
+                  << " ms, fib(avg/med)=" << avg_fib << "/" << median_f
+                  << " ms, b(avg/med)=" << avg_b << "/" << median_b << " ms\n";
     };
 
     // Random graphs
