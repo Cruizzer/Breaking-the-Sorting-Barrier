@@ -14,14 +14,17 @@
 #include <string>
 #include <sstream>
 
+// Scale-benchmark driver that produces the Chapter 4 CSV dataset.
 namespace {
 
+// Compute the mean timing for one trial group.
 double mean_of(const std::vector<double>& values) {
     if (values.empty()) return 0.0;
     const double sum = std::accumulate(values.begin(), values.end(), 0.0);
     return sum / static_cast<double>(values.size());
 }
 
+// Compute the median timing for one trial group.
 double median_of(std::vector<double> values) {
     if (values.empty()) return 0.0;
     std::sort(values.begin(), values.end());
@@ -30,6 +33,7 @@ double median_of(std::vector<double> values) {
     return 0.5 * (values[(n / 2) - 1] + values[n / 2]);
 }
 
+// Compute the sample standard deviation for one trial group.
 double stddev_of(const std::vector<double>& values) {
     if (values.size() <= 1) return 0.0;
     const double m = mean_of(values);
@@ -41,6 +45,7 @@ double stddev_of(const std::vector<double>& values) {
     return std::sqrt(acc / static_cast<double>(values.size() - 1));
 }
 
+// Compute the 95th percentile timing for one trial group.
 double p95_of(std::vector<double> values) {
     if (values.empty()) return 0.0;
     std::sort(values.begin(), values.end());
@@ -48,6 +53,7 @@ double p95_of(std::vector<double> values) {
     return values[std::min(idx, values.size() - 1)];
 }
 
+// Compare distance vectors with the same tolerance used in Chapter 4.
 bool distances_match_rel_abs(const std::vector<Weight>& a, const std::vector<Weight>& b) {
     if (a.size() != b.size()) return false;
     const double abs_tol = 1e-6;
@@ -64,6 +70,7 @@ bool distances_match_rel_abs(const std::vector<Weight>& a, const std::vector<Wei
 } // namespace
 
 int main(int argc, char** argv) {
+    // Default settings match the small scale benchmarks from the dissertation.
     std::vector<size_t> sizes = {1000, 5000, 10000, 50000};
     std::vector<int> degrees = {4, 8};
     size_t trials = 10;
@@ -74,6 +81,7 @@ int main(int argc, char** argv) {
     bool trials_overridden = false;
     bool warmup_overridden = false;
 
+    // Parse the comma-separated size override from the CLI.
     auto parse_sizes_csv = [](const std::string& csv) {
         std::vector<size_t> parsed;
         std::stringstream ss(csv);
@@ -86,6 +94,7 @@ int main(int argc, char** argv) {
         return parsed;
     };
 
+    // Parse CLI overrides for scale, sizes, trials, and warmup count.
     for (int i = 1; i < argc; ++i) {
         std::string arg(argv[i]);
 
@@ -141,6 +150,7 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Expand the preset scale profiles when sizes were not overridden directly.
     if (!sizes_overridden) {
         if (scale_profile == "large") {
             sizes = {100000, 250000, 500000, 1000000};
@@ -172,6 +182,7 @@ int main(int argc, char** argv) {
     const size_t road_branch_min = 1;
     const size_t road_branch_max = 3;
 
+    // Emit the full CSV schema used by the Chapter 4 analysis scripts.
     std::ofstream out("scale_results.csv");
     out << "schema_version,graph_type,size,param,trials,seed,enforce_connected,max_retries,"
         << "ba_initial_clique,road_cross_edge_rate,road_branch_min,road_branch_max,"
@@ -198,6 +209,7 @@ int main(int argc, char** argv) {
         << "bmssp_total_with_cd_ms,bmssp_total_with_cd_median_ms,bmssp_total_with_cd_std_ms,bmssp_total_with_cd_p95_ms,"
         << "match_count_binary_fib,match_count_binary_bmssp,match_count_fib_bmssp\n";
 
+    // Run one graph-family/size configuration across all algorithms.
     auto run_one = [&](const std::string& type, size_t N, int param){
         double total_d_ms = 0.0;
         double total_fib_ms = 0.0;
@@ -307,8 +319,10 @@ int main(int argc, char** argv) {
                                           road_branch_max);
             }
 
+            // Use a deterministic source choice so repeated trials stay reproducible.
             Vertex source = ((t + 1) * 1234567 + N + static_cast<size_t>(param)) % g.size();
 
+            // Randomise algorithm order to reduce cache and warm-state bias.
             enum AlgIndex : int { BIN = 0, FIB = 1, BMSSP = 2 };
             std::array<int, 3> order = {BIN, FIB, BMSSP};
             std::mt19937 order_rng(trial_seed ^ 0x9e3779b9U);
@@ -323,6 +337,7 @@ int main(int argc, char** argv) {
                 return benchmark::run_benchmark("BMSSP", algorithms::bmssp, g, source);
             };
 
+            // Warm up the code paths before collecting timings.
             for (size_t w = 0; w < warmup_runs; ++w) {
                 std::shuffle(order.begin(), order.end(), order_rng);
                 for (int idx : order) {
@@ -336,6 +351,7 @@ int main(int argc, char** argv) {
                 results[static_cast<size_t>(idx)] = run_index(idx);
             }
 
+            // Keep the three outputs aligned so the comparison logic stays simple.
             const auto& dijkstra_result = results[BIN];
             const auto& dijkstra_fib_result = results[FIB];
             const auto& bmssp_result = results[BMSSP];
@@ -410,6 +426,7 @@ int main(int argc, char** argv) {
             total_bmssp_queue_batchprepend_count += static_cast<double>(bmssp_result.bmssp_queue_batchprepend_count);
         }
 
+        // Reduce each metric to a single row in the output CSV.
         double avg_d = total_d_ms / trials;
         double avg_fib = total_fib_ms / trials;
         double avg_b = total_b_ms / trials;
@@ -560,26 +577,26 @@ int main(int argc, char** argv) {
                   << " ms, b(avg/med)=" << avg_b << "/" << median_b << " ms\n";
     };
 
-    // Random graphs
+    // Random graphs mirror the dissertation's featureless baseline family.
     for (auto N : sizes) {
         for (int deg : degrees) run_one("random", N, deg);
     }
 
-    // Erdős–Rényi graphs (same generator, explicit label for plotting)
+    // Erdős-Rényi graphs use the same generator but a separate label in plots.
     for (auto N : sizes) {
         for (int deg : degrees) run_one("erdos_renyi", N, deg);
     }
 
-    // Barabasi-Albert graphs
+    // Barabasi-Albert graphs expose hub-heavy degree structure.
     std::vector<int> ba_params = {2, 4};
     for (auto N : sizes) {
         for (int m_attach : ba_params) run_one("barabasi_albert", N, m_attach);
     }
 
-    // Grid graphs (use N as approximately nodes, degree param ignored)
+    // Grid graphs stress local, low-degree structure.
     for (auto N : sizes) run_one("grid", N, 0);
 
-    // Road-like graphs
+    // Road-like graphs approximate sparse branching transport networks.
     for (auto N : sizes) run_one("road", N, 0);
 
     out.close();

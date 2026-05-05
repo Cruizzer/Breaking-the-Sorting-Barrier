@@ -1,5 +1,4 @@
-// bmssp_duan25.cpp
-// Implementation of BMSSP algorithm from Duan et al. (2025)
+// BMSSP solver implementation and algorithms namespace wrappers.
 
 #include "algorithms/bmssp.hpp"
 
@@ -11,9 +10,9 @@ algorithms::BMSSPTelemetry g_bmssp_telemetry;
 
 namespace duan25 {
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Constructors
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------
+// Constructors allocate the input graph and working graph containers.
+// -----------
 
 Solver::Solver(int n)
     : num_real_vertices(n)
@@ -25,10 +24,11 @@ Solver::Solver(const AdjList& adj)
     : num_real_vertices((int)adj.size()), input_adj(adj)
 {}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Public methods
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------
+// Public methods validate input, prepare state, and run the solver.
+// -----------
 
+// Store one validated non-negative edge in the input graph.
 void Solver::add_edge(int u, int v, double w) {
     validate_real_vertex(u);
     validate_real_vertex(v);
@@ -38,6 +38,7 @@ void Solver::add_edge(int u, int v, double w) {
     input_adj[u].push_back({ v, w });
 }
 
+// Validate and prepare the working graph for either execution mode.
 void Solver::prepare_graph(bool apply_cd_transform) {
     cd_transform_applied = apply_cd_transform;
     validate_input_graph();
@@ -52,6 +53,7 @@ void Solver::prepare_graph(bool apply_cd_transform) {
     allocate_algorithm_state();
 }
 
+// Run BMSSP from one source and return final distances plus predecessors.
 std::pair<std::vector<double>, std::vector<int>> Solver::execute(int source) {
     validate_real_vertex(source);
     reset_state();
@@ -69,10 +71,12 @@ std::pair<std::vector<double>, std::vector<int>> Solver::execute(int source) {
     return build_output();
 }
 
+// Report the size of the internal graph used for the current run.
 std::size_t Solver::working_vertex_count() const {
     return working_adj.size();
 }
 
+// Report the number of internal edges after preprocessing.
 std::size_t Solver::working_edge_count() const {
     std::size_t total = 0;
     for (const auto& adj : working_adj) {
@@ -81,6 +85,7 @@ std::size_t Solver::working_edge_count() const {
     return total;
 }
 
+// Reconstruct a path in real-vertex space from the internal predecessor chain.
 std::vector<int> Solver::reconstruct_path(int target,
                                           const std::vector<int>& real_pred) const {
     if (target < 0 || target >= num_real_vertices) return {};
@@ -114,10 +119,11 @@ std::vector<int> Solver::reconstruct_path(int target,
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Graph preparation helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------
+// Graph preparation helpers remove duplicates and build the internal layout.
+// -----------
 
+// Keep only the lightest edge for each directed pair.
 void Solver::remove_parallel_edges() {
     // tmp[j] = (last source that considered j, index in new adj list)
     std::vector<std::pair<int,int>> tmp(num_real_vertices, {-1, -1});
@@ -137,6 +143,7 @@ void Solver::remove_parallel_edges() {
     }
 }
 
+// Reject invalid endpoints and negative weights before preprocessing starts.
 void Solver::validate_input_graph() const {
     for (int u = 0; u < num_real_vertices; ++u) {
         for (const Edge& e : input_adj[u]) {
@@ -150,12 +157,14 @@ void Solver::validate_input_graph() const {
     }
 }
 
+// Check a real-vertex id before using it as a query source or target.
 void Solver::validate_real_vertex(int v) const {
     if (v < 0 || v >= num_real_vertices) {
         throw std::out_of_range("bmssp: vertex index is out of range");
     }
 }
 
+// Use the input graph directly when the constant-degree transform is disabled.
 void Solver::build_identity_node_map() {
     working_adj = std::move(input_adj);
     int n = (int)working_adj.size();
@@ -165,6 +174,7 @@ void Solver::build_identity_node_map() {
     std::iota(internal_to_real.begin(), internal_to_real.end(), 0);
 }
 
+// Expand high-degree vertices into the bounded-degree gadget used in the paper.
 void Solver::apply_constant_degree_transform() {
     // Assign a unique proxy id to each directed edge in both directions.
     std::vector<std::map<int,int>> edge_proxy(num_real_vertices);
@@ -213,6 +223,7 @@ void Solver::apply_constant_degree_transform() {
     input_adj.clear();
 }
 
+// Size all per-run arrays from the working graph and recursion depth.
 void Solver::allocate_algorithm_state() {
     int n      = (int)working_adj.size();
     double lgn = std::log2((double)n);
@@ -239,6 +250,7 @@ void Solver::allocate_algorithm_state() {
         level_pqs.emplace_back(n);
 }
 
+// Reset per-source distance, predecessor, and recursion bookkeeping.
 void Solver::reset_state() {
     int n = (int)working_adj.size();
     dist_estimate.assign(n, INF);
@@ -249,34 +261,39 @@ void Solver::reset_state() {
     pivot_call_id = 0;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Distance helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------
+// Distance helpers build and update the path labels used by the queue.
+// -----------
 
+// Build the current label for one internal vertex.
 PathLabel Solver::label_of(int v) const {
     return PathLabel(dist_estimate[v], hop_count[v], v, predecessor[v]);
 }
 
+// Build the relaxed label reached by one outgoing edge.
 PathLabel Solver::relaxed_label(int u, int v, double w) const {
     return PathLabel(dist_estimate[u] + w, hop_count[u] + 1, v, u);
 }
 
+// Apply a relaxation to the stored state for one vertex.
 void Solver::relax(int u, int v, double w) {
     dist_estimate[v] = dist_estimate[u] + w;
     hop_count[v]     = hop_count[u] + 1;
     predecessor[v]   = u;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Algorithm 1: FindPivots
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------
+// Algorithm 1: FindPivots reduces the frontier before recursion.
+// -----------
 
+// Expose the pivot set and the visited vertices for the current level.
 std::pair<std::vector<int>, std::vector<int>>
 Solver::find_pivots(PathLabel B, const std::vector<int>& S) {
     auto batch = discover_pivots(B, S);
     return { batch.pivots, batch.visited };
 }
 
+// Run the bounded Bellman-Ford rounds that identify pivots and completed nodes.
 Solver::PivotBatch Solver::discover_pivots(PathLabel B, const std::vector<int>& S) {
     if (g_bmssp_telemetry.enabled) {
         g_bmssp_telemetry.find_pivots_calls++;
@@ -348,10 +365,11 @@ Solver::PivotBatch Solver::discover_pivots(PathLabel B, const std::vector<int>& 
     return { P, W };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Algorithm 2: Base Case (Dijkstra)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------
+// Algorithm 2: Base Case (Dijkstra) handles the smallest recursion level.
+// -----------
 
+// Run the capped Dijkstra base case and return the next boundary.
 std::pair<PathLabel, std::vector<int>>
 Solver::base_case(PathLabel B, int x) {
     std::vector<int> settled;
@@ -388,10 +406,11 @@ Solver::base_case(PathLabel B, int x) {
     return { new_bound, settled };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Algorithm 3: BMSSP (recursive)
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------
+// Algorithm 3: BMSSP (recursive) drives the divide-and-conquer structure.
+// -----------
 
+// Dispatch one recursive BMSSP call.
 std::pair<PathLabel, std::vector<int>>
 Solver::bmssp_rec(int level, PathLabel B, const std::vector<int>& S) {
     if (g_bmssp_telemetry.enabled) {
@@ -405,6 +424,7 @@ Solver::bmssp_rec(int level, PathLabel B, const std::vector<int>& S) {
     return { step.bound, step.completed };
 }
 
+// Pull a batch, recurse, then feed improved labels back into the queue.
 Solver::LevelStep Solver::process_level(int level, PathLabel B, const std::vector<int>& S) {
     auto pivots = discover_pivots(B, S);
 
@@ -463,6 +483,7 @@ Solver::LevelStep Solver::process_level(int level, PathLabel B, const std::vecto
     return { return_bound, completed };
 }
 
+// Relax edges out of completed vertices and requeue any improved neighbours.
 void Solver::relax_from_completed_vertices(int level,
                                            PathLabel parent_bound,
                                            PathLabel child_pull_bound,
@@ -496,10 +517,11 @@ void Solver::relax_from_completed_vertices(int level,
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Output helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------
+// Output helpers convert internal state back to real-vertex results.
+// -----------
 
+// Follow internal predecessors until the real-vertex parent changes.
 int Solver::real_predecessor_of(int v) const {
     int real_v = internal_to_real[v];
     int p = v;
@@ -509,6 +531,7 @@ int Solver::real_predecessor_of(int v) const {
     return p;
 }
 
+// Convert the internal state into the public distance and predecessor vectors.
 std::pair<std::vector<double>, std::vector<int>> Solver::build_output() const {
     if (!cd_transform_applied) {
         return { dist_estimate, predecessor };
@@ -527,28 +550,32 @@ std::pair<std::vector<double>, std::vector<int>> Solver::build_output() const {
 
 } // namespace duan25
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Wrapper functions for the algorithms namespace
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------
+// Wrapper functions expose the solver through the algorithms namespace.
+// -----------
 
 #include "graph.hpp"
 
 namespace algorithms {
 
+// Toggle telemetry for BMSSP benchmark runs.
 void set_bmssp_telemetry_enabled(bool enabled) {
     g_bmssp_telemetry.enabled = enabled;
 }
 
+// Reset BMSSP telemetry while preserving the enabled flag.
 void reset_bmssp_telemetry() {
     const bool enabled = g_bmssp_telemetry.enabled;
     g_bmssp_telemetry = BMSSPTelemetry{};
     g_bmssp_telemetry.enabled = enabled;
 }
 
+// Read back the current BMSSP telemetry snapshot.
 BMSSPTelemetry get_bmssp_telemetry() {
     return g_bmssp_telemetry;
 }
 
+// Run BMSSP through the public Graph interface and return all distances.
 std::vector<Weight> bmssp(const Graph& graph, Vertex source) {
     duan25::Solver solver(graph.size());
     
@@ -575,6 +602,7 @@ std::vector<Weight> bmssp(const Graph& graph, Vertex source) {
     return distances;
 }
 
+// Return just one BMSSP distance for the requested target vertex.
 Weight bmssp_single_target(const Graph& graph, Vertex source, Vertex target) {
     if (target >= graph.size()) {
         return std::numeric_limits<Weight>::infinity();
@@ -583,6 +611,7 @@ Weight bmssp_single_target(const Graph& graph, Vertex source, Vertex target) {
     return distances[target];
 }
 
+// Reconstruct a BMSSP path in public vertex ids.
 std::vector<Vertex> bmssp_path(const Graph& graph, Vertex source, Vertex target) {
     if (target >= graph.size()) {
         return {};

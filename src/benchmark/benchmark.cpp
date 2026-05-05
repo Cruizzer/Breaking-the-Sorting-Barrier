@@ -12,6 +12,7 @@
 
 namespace benchmark {
 
+// Count edges so benchmark reports can normalize runtime by graph size.
 static size_t count_edges(const Graph& graph) {
     size_t total = 0;
     for (const auto& adj_list : graph.adj) {
@@ -20,6 +21,7 @@ static size_t count_edges(const Graph& graph) {
     return total;
 }
 
+// Compare two distance vectors with the tolerance used in the dissertation.
 static bool distances_match(const std::vector<Weight>& a, const std::vector<Weight>& b) {
     if (a.size() != b.size()) return false;
 
@@ -38,6 +40,7 @@ static bool distances_match(const std::vector<Weight>& a, const std::vector<Weig
     return true;
 }
 
+// Build an undirected view of the graph for topology statistics.
 static std::vector<std::vector<size_t>> build_weak_adjacency(const Graph& graph) {
     std::vector<std::vector<size_t>> weak_adj(graph.size());
     for (size_t u = 0; u < graph.size(); ++u) {
@@ -49,6 +52,7 @@ static std::vector<std::vector<size_t>> build_weak_adjacency(const Graph& graph)
     return weak_adj;
 }
 
+// Find a farthest vertex pair for the approximate diameter estimate.
 static std::pair<size_t, int> bfs_farthest(const std::vector<std::vector<size_t>>& adj, size_t start) {
     if (adj.empty()) return {0, 0};
 
@@ -78,6 +82,7 @@ static std::pair<size_t, int> bfs_farthest(const std::vector<std::vector<size_t>
     return {farthest_vertex, farthest_dist};
 }
 
+// Compute the graph-structure metrics reported in Chapter 4.
 GraphTopologyStats compute_graph_topology_stats(const Graph& graph, Vertex source) {
     GraphTopologyStats stats;
     stats.graph_size = graph.size();
@@ -239,6 +244,7 @@ GraphTopologyStats compute_graph_topology_stats(const Graph& graph, Vertex sourc
     return stats;
 }
 
+// Time one algorithm and collect correctness, topology, and telemetry data.
 BenchmarkResult run_benchmark(
     const std::string& algorithm_name,
     AlgorithmFunc algorithm,
@@ -333,6 +339,7 @@ BenchmarkResult run_benchmark(
     return result;
 }
 
+// Time BMSSP preprocessing separately from the shortest-path query.
 BenchmarkResult measure_bmssp_constant_degree_preparation(
     const Graph& graph,
     Vertex source,
@@ -371,6 +378,7 @@ BenchmarkResult measure_bmssp_constant_degree_preparation(
     return result;
 }
 
+// Compare binary Dijkstra and BMSSP on a single graph instance.
 ComparisonResult compare_algorithms(
     AlgorithmFunc dijkstra,
     AlgorithmFunc bmssp,
@@ -408,6 +416,7 @@ ComparisonResult compare_algorithms(
     return comparison;
 }
 
+// Compare binary Dijkstra, Fibonacci Dijkstra, and BMSSP together.
 ThreeWayComparisonResult compare_three_algorithms(
     AlgorithmFunc dijkstra,
     AlgorithmFunc dijkstra_fibonacci,
@@ -439,6 +448,7 @@ ThreeWayComparisonResult compare_three_algorithms(
     return comparison;
 }
 
+// Average repeated runs from random sources to reduce source sensitivity.
 BenchmarkResult run_multiple_trials(
     const std::string& algorithm_name,
     AlgorithmFunc algorithm,
@@ -476,6 +486,7 @@ BenchmarkResult run_multiple_trials(
     return avg_result;
 }
 
+// Print the raw benchmark summary for one algorithm run.
 void print_result(const BenchmarkResult& result) {
     std::cout << "\n=== " << result.algorithm_name << " Results ===\n";
     std::cout << "Execution time: " << std::fixed << std::setprecision(3) 
@@ -492,6 +503,7 @@ void print_result(const BenchmarkResult& result) {
     std::cout << "\n";
 }
 
+// Print the two-way comparison summary used by the CLI.
 void print_comparison(const ComparisonResult& result) {
     std::cout << "\n" << std::string(70, '=') << "\n";
     std::cout << "ALGORITHM COMPARISON\n";
@@ -529,6 +541,7 @@ void print_comparison(const ComparisonResult& result) {
     std::cout << std::string(70, '=') << "\n";
 }
 
+// Print the three-way comparison summary used by the scaled benchmark.
 void print_comparison(const ThreeWayComparisonResult& result) {
     std::cout << "\n" << std::string(70, '=') << "\n";
     std::cout << "ALGORITHM COMPARISON (THREE-WAY)\n";
@@ -562,6 +575,7 @@ void print_comparison(const ThreeWayComparisonResult& result) {
     std::cout << std::string(70, '=') << "\n";
 }
 
+// Write the two-way comparison results to CSV for later analysis.
 void generate_report(const std::vector<ComparisonResult>& results, const std::string& filename) {
     std::ofstream file(filename);
     
@@ -586,6 +600,7 @@ void generate_report(const std::vector<ComparisonResult>& results, const std::st
     std::cout << "\nReport saved to: " << filename << "\n";
 }
 
+// Write the three-way comparison results to CSV for later analysis.
 void generate_report(const std::vector<ThreeWayComparisonResult>& results, const std::string& filename) {
     std::ofstream file(filename);
 

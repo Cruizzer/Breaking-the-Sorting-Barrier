@@ -4,10 +4,12 @@
 #include <algorithm>
 #include <memory>
 
+// Dijkstra implementations and the Fibonacci heap used for the comparator baseline.
 namespace algorithms {
 
 namespace {
 
+// Global counters that record queue behaviour during benchmark runs.
 DijkstraTelemetry g_dijkstra_telemetry;
 
 } // namespace
@@ -43,6 +45,7 @@ public:
         Node(Vertex v, Weight k) : vertex(v), key(k), left(this), right(this) {}
     };
 
+    // Insert a node and keep it available through a stable handle.
     Node* insert(Vertex vertex, Weight key) {
         auto owned = std::make_unique<Node>(vertex, key);
         Node* node = owned.get();
@@ -68,6 +71,7 @@ public:
         return min_ == nullptr;
     }
 
+    // Remove the minimum root and promote its children back into the root list.
     std::pair<Vertex, Weight> extract_min() {
         Node* z = min_;
 
@@ -104,6 +108,7 @@ public:
         return {z->vertex, z->key};
     }
 
+    // Lower a key in place and cut the node if the heap order is violated.
     void decrease_key(Node* x, Weight new_key) {
         if (!x || new_key > x->key) {
             return;
@@ -130,6 +135,7 @@ private:
     size_t size_ = 0;
     std::vector<std::unique_ptr<Node>> storage_;
 
+    // Detach one circular-list node without destroying it.
     static void remove_from_list(Node* node) {
         node->left->right = node->right;
         node->right->left = node->left;
@@ -137,6 +143,7 @@ private:
         node->right = node;
     }
 
+    // Add a node to the root list next to the current minimum.
     void insert_into_root_list(Node* node) {
         node->left = min_;
         node->right = min_->right;
@@ -144,6 +151,7 @@ private:
         min_->right = node;
     }
 
+    // Make y a child of x during consolidation.
     void link(Node* y, Node* x) {
         remove_from_list(y);
         y->parent = x;
@@ -161,6 +169,7 @@ private:
         ++x->degree;
     }
 
+    // Merge roots of equal degree after extract-min.
     void consolidate() {
         std::vector<Node*> roots;
         Node* start = min_;
@@ -217,6 +226,7 @@ private:
         }
     }
 
+    // Move x from y's child list back to the root list.
     void cut(Node* x, Node* y) {
         if (y->child == x) {
             if (x->right == x) {
@@ -234,6 +244,7 @@ private:
         insert_into_root_list(x);
     }
 
+    // Propagate cuts upward when a node has already lost a child.
     void cascading_cut(Node* y) {
         Node* z = y->parent;
         if (!z) {
@@ -253,6 +264,7 @@ private:
 } // namespace
 
 std::vector<Weight> dijkstra(const Graph& graph, Vertex source) {
+    // Standard binary-heap Dijkstra with lazy deletion.
     const size_t n = graph.size();
     std::vector<Weight> dist(n, std::numeric_limits<Weight>::infinity());
     dist[source] = 0.0;
@@ -301,6 +313,7 @@ std::vector<Weight> dijkstra(const Graph& graph, Vertex source) {
 }
 
 Weight dijkstra_single_target(const Graph& graph, Vertex source, Vertex target) {
+    // Binary-heap Dijkstra with early exit once the target is settled.
     if (source >= graph.size() || target >= graph.size()) {
         return std::numeric_limits<Weight>::infinity();
     }
@@ -341,6 +354,7 @@ Weight dijkstra_single_target(const Graph& graph, Vertex source, Vertex target) 
 }
 
 std::vector<Vertex> dijkstra_path(const Graph& graph, Vertex source, Vertex target) {
+    // Binary-heap Dijkstra with predecessor tracking for path reconstruction.
     if (source >= graph.size() || target >= graph.size()) {
         return {};
     }
@@ -399,6 +413,7 @@ std::vector<Vertex> dijkstra_path(const Graph& graph, Vertex source, Vertex targ
 }
 
 std::vector<Weight> dijkstra_fibonacci(const Graph& graph, Vertex source) {
+    // Fibonacci-heap Dijkstra keeps decrease-key work on the live node handle.
     const size_t n = graph.size();
     std::vector<Weight> dist(n, std::numeric_limits<Weight>::infinity());
     if (source >= n) {
@@ -452,6 +467,7 @@ std::vector<Weight> dijkstra_fibonacci(const Graph& graph, Vertex source) {
 }
 
 Weight dijkstra_fibonacci_single_target(const Graph& graph, Vertex source, Vertex target) {
+    // Fibonacci-heap Dijkstra with early exit once the target is settled.
     if (source >= graph.size() || target >= graph.size()) {
         return std::numeric_limits<Weight>::infinity();
     }
@@ -507,6 +523,7 @@ Weight dijkstra_fibonacci_single_target(const Graph& graph, Vertex source, Verte
 }
 
 std::vector<Vertex> dijkstra_fibonacci_path(const Graph& graph, Vertex source, Vertex target) {
+    // Fibonacci-heap Dijkstra with predecessor tracking for path reconstruction.
     if (source >= graph.size() || target >= graph.size()) {
         return {};
     }

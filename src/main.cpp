@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+// Print the supported generator, trial, and output options.
 void print_usage(const char* program_name) {
     std::cout << "Usage: " << program_name << " --generate TYPE SIZE [OPTIONS]\n";
     std::cout << "\nGraph Generation:\n";
@@ -42,7 +43,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    // Parse generation parameters
+    // Select and build the requested graph family.
     std::string type = argv[2];
     Graph graph;
     
@@ -106,7 +107,7 @@ int main(int argc, char** argv) {
     
     std::cout << "✓ Graph generated: " << graph.size() << " vertices\n";
     
-    // Parse options
+    // Parse the benchmarking options.
     size_t num_trials = 1;
     std::string report_file;
     std::string dijkstra_type = "binary";
@@ -122,6 +123,7 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Choose the Dijkstra variant requested on the command line.
     benchmark::AlgorithmFunc dijkstra_func = algorithms::dijkstra;
     std::string dijkstra_label = "Dijkstra (binary heap)";
     if (dijkstra_type == "fib" || dijkstra_type == "fibonacci") {
@@ -132,13 +134,13 @@ int main(int argc, char** argv) {
         return 1;
     }
     
-    // Run benchmarks
+    // Run the requested benchmark configuration.
     std::cout << "\n=== Running Benchmarks ===\n";
     std::cout << "Trials: " << num_trials << "\n";
     std::cout << "Dijkstra variant: " << dijkstra_label << "\n";
     
     if (num_trials == 1) {
-        // Single trial from vertex 0
+        // Single trial from vertex 0 for a quick correctness check.
         auto result = benchmark::compare_algorithms(
             dijkstra_func,
             algorithms::bmssp,
@@ -148,7 +150,7 @@ int main(int argc, char** argv) {
         
         benchmark::print_comparison(result);
 
-        // If algorithms disagree, print per-vertex distances and reconstructed paths
+        // Print per-vertex diagnostics if the algorithms disagree.
         if (!result.results_match) {
             std::cout << "\n--- Detailed diagnostics (mismatched vertices) ---\n";
             const auto& dists_dij = result.dijkstra_result.distances;
@@ -193,7 +195,7 @@ int main(int argc, char** argv) {
         }
         
     } else {
-        // Multiple trials
+        // Multiple trials use deterministic source selection to keep runs reproducible.
         std::cout << "\nRunning " << num_trials << " trials from random source vertices...\n";
         
         std::vector<benchmark::ComparisonResult> all_results;
@@ -218,7 +220,7 @@ int main(int argc, char** argv) {
             std::cout << "  Speedup:  " << result.speedup_factor << "x\n";
         }
         
-        // Compute average speedup
+        // Aggregate trial-level timings into a simple summary.
         double avg_speedup = 0.0;
         double avg_dijkstra_time = 0.0;
         double avg_bmssp_time = 0.0;

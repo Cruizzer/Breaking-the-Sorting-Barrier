@@ -1,6 +1,6 @@
 # Breaking-the-Sorting-Barrier
 
-Single-source shortest paths benchmark project comparing binary-heap Dijkstra, Fibonacci-heap Dijkstra, and BMSSP. The repository includes the implementation, unit tests, benchmark drivers, scale benchmarking, and the plotting scripts used to generate the figures in [finalReportTemplateLaTeX/figures](finalReportTemplateLaTeX/figures).
+Single-source shortest paths benchmark project comparing binary-heap Dijkstra, Fibonacci-heap Dijkstra, and BMSSP. The repository includes the implementation, unit tests, benchmark drivers, and scale benchmarking.
 
 This README is the main entry point for build, test, benchmark, and figure-generation workflows.
 
@@ -10,8 +10,7 @@ This README is the main entry point for build, test, benchmark, and figure-gener
 - [include/](include) - public headers
 - [test/](test) - Catch2 unit tests
 - [benchmarks_google/](benchmarks_google) - Google Benchmark microbenchmarks
-- [tools/](tools) - plot generation and reproducibility helpers
-- [finalReportTemplateLaTeX/](finalReportTemplateLaTeX) - report sources and generated figures
+- [tools/](tools) - plot generation scripts
 
 ## Build
 
@@ -161,25 +160,14 @@ The generated CSV includes:
 
 ## Plot Generation
 
-The report figures are generated from the scale CSV with the scripts in [tools/](tools).
+The plotting scripts in [tools/](tools) can generate figures from the scale benchmark CSV.
 
-Generate the current figure set:
+Example usage:
 
 ```bash
-python3 tools/plot_scale_new_constraints.py --csv scale_results.csv --outdir finalReportTemplateLaTeX/figures
-python3 tools/generate_claimed_figures.py --csv scale_results.csv --outdir finalReportTemplateLaTeX/figures
+python3 tools/plot_scale_new_constraints.py --csv scale_results.csv --outdir ./figures
+python3 tools/generate_claimed_figures.py --csv scale_results.csv --outdir ./figures
 ```
-
-Expected outputs include:
-
-- [finalReportTemplateLaTeX/figures/runtime_median_family_grid.png](finalReportTemplateLaTeX/figures/runtime_median_family_grid.png)
-- [finalReportTemplateLaTeX/figures/variability_summary.png](finalReportTemplateLaTeX/figures/variability_summary.png)
-- [finalReportTemplateLaTeX/figures/bmssp_prep_impact_ratio.png](finalReportTemplateLaTeX/figures/bmssp_prep_impact_ratio.png)
-- [finalReportTemplateLaTeX/figures/speedup_ratio_heatmaps.png](finalReportTemplateLaTeX/figures/speedup_ratio_heatmaps.png)
-- [finalReportTemplateLaTeX/figures/pq_telemetry.png](finalReportTemplateLaTeX/figures/pq_telemetry.png)
-- [finalReportTemplateLaTeX/figures/stale_vs_fib_gap.png](finalReportTemplateLaTeX/figures/stale_vs_fib_gap.png)
-- [finalReportTemplateLaTeX/figures/c2c1_stability.png](finalReportTemplateLaTeX/figures/c2c1_stability.png)
-- [finalReportTemplateLaTeX/figures/structural_correlates.png](finalReportTemplateLaTeX/figures/structural_correlates.png)
 
 ## BMSSP Usage
 
@@ -230,5 +218,5 @@ rm -rf build && cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build 
 
 ## Notes
 
-- The current final-report figures are generated into [finalReportTemplateLaTeX/figures](finalReportTemplateLaTeX/figures).
+- Plotting scripts in [tools/](tools) accept `--outdir` to control output location.
 - Older helper markdown files in the repository are archival and may contain stale commands or historical notes.

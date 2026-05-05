@@ -8,6 +8,7 @@
 
 namespace {
 
+// Assign reproducible 2D coordinates to each generated vertex.
 void add_vertices_with_random_coords(Graph& g, size_t n, std::mt19937& rng) {
     std::uniform_real_distribution<double> coord_dist(0.0, 100.0);
     for (size_t i = 0; i < n; ++i) {
@@ -15,11 +16,13 @@ void add_vertices_with_random_coords(Graph& g, size_t n, std::mt19937& rng) {
     }
 }
 
+// Canonical key for an undirected edge pair.
 size_t edge_key(size_t u, size_t v, size_t n) {
     if (u > v) std::swap(u, v);
     return u * n + v;
 }
 
+// Check weak connectivity so the generators can retry when requested.
 bool is_connected_undirected(const Graph& g) {
     const size_t n = g.size();
     if (n <= 1) return true;
@@ -44,6 +47,7 @@ bool is_connected_undirected(const Graph& g) {
     return seen == n;
 }
 
+// Build a sparse Erdos-Renyi-style graph with retries for connectivity.
 Graph generate_erdos_renyi_single(size_t n,
                                   double avg_degree,
                                   double min_weight,
@@ -85,6 +89,7 @@ Graph generate_erdos_renyi_single(size_t n,
     return g;
 }
 
+// Build a degree-controlled random graph used as the Chapter 4 random baseline.
 Graph generate_random_regularish_single(size_t n,
                                         double avg_degree,
                                         double min_weight,
@@ -145,6 +150,7 @@ Graph generate_random_regularish_single(size_t n,
 
 } // namespace
 
+// Retry graph generation until the connectivity requirement is satisfied.
 Graph generate_random_graph(size_t n,
                             double avg_degree,
                             double min_weight,
@@ -165,6 +171,7 @@ Graph generate_random_graph(size_t n,
     return generate_random_regularish_single(n, avg_degree, min_weight, max_weight, seed);
 }
 
+// Retry the Erdos-Renyi generator until the connectivity requirement is satisfied.
 Graph generate_erdos_renyi_graph(size_t n,
                                  double avg_degree,
                                  double min_weight,
@@ -185,6 +192,7 @@ Graph generate_erdos_renyi_graph(size_t n,
     return generate_erdos_renyi_single(n, avg_degree, min_weight, max_weight, seed);
 }
 
+// Build a preferential-attachment graph to expose hub-heavy structure.
 Graph generate_barabasi_albert_graph(size_t n,
                                      size_t m_attach,
                                      double min_weight,
@@ -254,6 +262,7 @@ Graph generate_barabasi_albert_graph(size_t n,
     return g;
 }
 
+// Build a grid graph with local 4-neighbour connectivity.
 Graph generate_grid_graph(size_t rows, size_t cols, double min_weight, double max_weight, unsigned seed) {
     Graph g;
     std::mt19937 rng(seed);
@@ -294,6 +303,7 @@ Graph generate_grid_graph(size_t rows, size_t cols, double min_weight, double ma
     return g;
 }
 
+// Build a sparse branching graph with shortcut edges for road-like structure.
 Graph generate_road_network(size_t n,
                             double min_weight,
                             double max_weight,

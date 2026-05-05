@@ -114,7 +114,7 @@ public:
 
 private:
 
-    // ── Data members ──────────────────────────────────────────────────────────
+    // ----------- Data members -----------
 
     int      num_real_vertices;
     bool     cd_transform_applied = false;
@@ -140,7 +140,7 @@ private:
     // at the same level to avoid repeated allocations).
     std::vector<BatchPQ> level_pqs;
 
-    // ── FindPivots state (Algorithm 1) ────────────────────────────────────────
+    // ----------- FindPivots state (Algorithm 1) -----------
     std::vector<int>   pivot_root;       // root[v]: root of v's BFS tree
     std::vector<int>   tree_size;        // number of vertices in each root's tree
     std::vector<int>   visit_stamp;      // generation counter per vertex
@@ -149,10 +149,10 @@ private:
     // settled_level[v] = the recursion level at which v was last settled.
     std::vector<int>   settled_level;
 
-    // ── Infinity constant ─────────────────────────────────────────────────────
+    // ----------- Infinity constant -----------
     const double INF = std::numeric_limits<double>::max() / 10.0;
 
-    // ── Private methods  ────────────────────────────────────────────────────────
+    // ----------- Private methods -----------
     
     void remove_parallel_edges();
     void validate_input_graph() const;
